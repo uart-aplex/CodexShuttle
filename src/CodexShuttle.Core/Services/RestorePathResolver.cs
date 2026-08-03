@@ -15,8 +15,15 @@ public sealed class RestorePathResolver
 
     public string GetCurrentCodexHome()
     {
-        return _codexHomeOverride
-            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
+        if (_codexHomeOverride is not null)
+        {
+            return _codexHomeOverride;
+        }
+
+        var configuredCodexHome = Environment.GetEnvironmentVariable("CODEX_HOME");
+        return !string.IsNullOrWhiteSpace(configuredCodexHome)
+            ? Path.GetFullPath(Environment.ExpandEnvironmentVariables(configuredCodexHome))
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
     }
 
     public string ResolveCodexHome(BackupManifest manifest)
@@ -27,6 +34,11 @@ public sealed class RestorePathResolver
     public string ResolveWorkspaceTarget(WorkspaceEntry workspace)
     {
         return workspace.SourcePath;
+    }
+
+    public string ResolveAgentsHome(BackupManifest manifest)
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agents");
     }
 
     public string ResolveAppDataTarget(AppDataEntry appData)

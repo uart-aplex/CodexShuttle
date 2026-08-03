@@ -49,9 +49,7 @@ public sealed class RestorePlanner
             var agentsSource = _pathSafety.ResolvePackagePath(packageRoot, manifest.AgentsPackagePath);
             if (Directory.Exists(agentsSource))
             {
-                var agentsTarget = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    ".agents");
+                var agentsTarget = _pathResolver.ResolveAgentsHome(manifest);
                 _pathSafety.ValidateMirrorPair(agentsSource, agentsTarget);
                 plan.Add(new MirrorPlanItem
                 {

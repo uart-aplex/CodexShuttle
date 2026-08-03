@@ -92,6 +92,40 @@ public sealed class RestorePlannerTests
         }
     }
 
+    [TestMethod]
+    public void CreatePlan_DifferentBackupUser_MapsProfileDataToCurrentComputer()
+    {
+        var root = CreateTempPackage();
+        Directory.CreateDirectory(Path.Combine(root, ".agents"));
+        var currentCodexHome = Path.Combine(Path.GetTempPath(), "CodexShuttleCurrentUser", Guid.NewGuid().ToString("N"), ".codex");
+
+        try
+        {
+            var manifest = new BackupManifest
+            {
+                SourceUser = "OfficeUser",
+                SourceUserProfile = @"C:\Users\OfficeUser",
+                CodexHome = @"C:\Users\OfficeUser\.codex",
+                CodexHomeExists = true,
+                AgentsHome = @"C:\Users\OfficeUser\.agents",
+                AgentsHomeExists = true
+            };
+
+            var plan = new RestorePlanner(new RestorePathResolver(currentCodexHome))
+                .CreatePlan(root, manifest, new RestoreOptions());
+
+            Assert.IsTrue(plan.Any(item => item.DestinationPath.StartsWith(currentCodexHome, StringComparison.OrdinalIgnoreCase)));
+            Assert.IsTrue(plan.Any(item => item.DestinationPath.Equals(
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agents"),
+                StringComparison.OrdinalIgnoreCase)));
+            Assert.IsFalse(plan.Any(item => item.DestinationPath.Contains("OfficeUser", StringComparison.OrdinalIgnoreCase)));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     private static string CreateTempPackage()
     {
         var root = Path.Combine(Path.GetTempPath(), "CodexShuttleTests", Guid.NewGuid().ToString("N"));

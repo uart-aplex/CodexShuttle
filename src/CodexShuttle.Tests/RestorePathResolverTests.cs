@@ -23,6 +23,38 @@ public sealed class RestorePathResolverTests
     }
 
     [TestMethod]
+    public void ResolveCodexHome_WhenCurrentComputerHasOverride_UsesOverride()
+    {
+        var targetCodexHome = Path.Combine(Path.GetTempPath(), "CurrentUserCodexHome");
+        var manifest = new BackupManifest
+        {
+            SourceUserProfile = @"C:\Users\OfficeUser",
+            CodexHome = @"C:\Users\OfficeUser\.codex"
+        };
+        var resolver = new RestorePathResolver(targetCodexHome);
+
+        var target = resolver.ResolveCodexHome(manifest);
+
+        Assert.AreEqual(Path.GetFullPath(targetCodexHome), target);
+    }
+
+    [TestMethod]
+    public void ResolveAgentsHome_WhenBackupUserIsDifferent_UsesCurrentUserProfile()
+    {
+        var manifest = new BackupManifest
+        {
+            SourceUserProfile = @"C:\Users\OfficeUser",
+            AgentsHome = @"C:\Users\OfficeUser\.agents"
+        };
+        var resolver = new RestorePathResolver();
+
+        var target = resolver.ResolveAgentsHome(manifest);
+
+        Assert.AreEqual(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agents"), target);
+        Assert.AreNotEqual(manifest.AgentsHome, target, ignoreCase: true);
+    }
+
+    [TestMethod]
     public void ResolveAppDataTarget_WhenBackupUserIsDifferent_UsesCurrentRoamingAppData()
     {
         var entry = new AppDataEntry

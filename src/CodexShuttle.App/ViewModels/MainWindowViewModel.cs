@@ -396,7 +396,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             }
 
             _loadedRestorePackage = package;
-            RestorePackageInfo = $"From {manifest.SourceComputer} / {manifest.SourceUser}, {manifest.CreatedAt:yyyy-MM-dd HH:mm}; schema {manifest.SchemaVersion}; credentials excluded: {(manifest.CredentialsExcluded ? "Yes" : "No")}.";
+            var currentCodexHome = new RestorePathResolver(_settings.CodexHomeOverride).GetCurrentCodexHome();
+            RestorePackageInfo = $"From {manifest.SourceComputer} / {manifest.SourceUser}, {manifest.CreatedAt:yyyy-MM-dd HH:mm}; user data restores to {currentCodexHome}; schema {manifest.SchemaVersion}; credentials excluded: {(manifest.CredentialsExcluded ? "Yes" : "No")}.";
             OperationStatus = "Restore package loaded. Workspace paths are fixed to their original locations. Run Dry Run to verify them.";
             InvalidateDryRun();
         }
@@ -575,9 +576,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             }
 
             var options = CreateRestoreOptions();
+            var pathResolver = new RestorePathResolver(_settings.CodexHomeOverride);
             var result = await Task.Run(() =>
             {
-                var plan = new RestorePlanner().CreatePlan(package, manifest, options);
+                var plan = new RestorePlanner(pathResolver).CreatePlan(package, manifest, options);
                 return _dryRunService.ComparePlan(plan);
             });
 
@@ -629,7 +631,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         IsRestoreRunning = true;
         _restoreCancellation = new CancellationTokenSource();
         RestoreLog.Clear();
-        var service = new RestoreService(_fileMirrorService, _manifestService);
+        var pathResolver = new RestorePathResolver(_settings.CodexHomeOverride);
+        var service = new RestoreService(_fileMirrorService, _manifestService, pathResolver);
         var progress = new Progress<string>(message =>
         {
             OperationStatus = message;
