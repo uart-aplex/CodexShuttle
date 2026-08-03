@@ -49,6 +49,19 @@ dotnet build CodexShuttle.sln
 dotnet test CodexShuttle.sln
 ```
 
+Create the self-contained Windows x64 portable executable with:
+
+```powershell
+dotnet publish src/CodexShuttle.App/CodexShuttle.App.csproj -p:PublishProfile=Portable-win-x64
+```
+
+## Portable Release
+
+Non-developers can download the `CodexShuttle-v0.2.0-win-x64.exe` asset from the
+[latest GitHub release](https://github.com/uart-aplex/CodexShuttle/releases/latest). It is a self-contained single-file app and does not require a separate .NET installation or DLL download.
+
+Keep the executable on a local drive or USB drive, close Codex, and then run it. Windows SmartScreen may show an unknown-publisher warning because the project does not currently use a paid code-signing certificate. Verify the downloaded file against `SHA256SUMS.txt` from the same release before running it.
+
 The app stores computer-specific paths at:
 
 ```text
