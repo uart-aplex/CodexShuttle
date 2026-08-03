@@ -1,0 +1,29 @@
+bin/
+obj/
+.vs/
+.vscode/
+TestResults/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.nupkg
+*.snupkg
+*.log
+publish/
+artifacts/
+outputs/
+*.zip
+
+# Local backup packages and snapshots can contain private Codex state.
+CodexTransfer/
+PreRestore-*/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Never commit secrets or local auth material.
+.env
+*.key
+*.pem
+secrets.json
