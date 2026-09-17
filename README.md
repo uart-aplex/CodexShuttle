@@ -57,7 +57,7 @@ dotnet publish src/CodexShuttle.App/CodexShuttle.App.csproj -p:PublishProfile=Po
 
 ## Portable Release
 
-Non-developers can download the `CodexShuttle-v0.2.1-win-x64.exe` asset from the
+Non-developers can download the `CodexShuttle-v0.2.2-win-x64.exe` asset from the
 [latest GitHub release](https://github.com/uart-aplex/CodexShuttle/releases/latest). It is a self-contained single-file app and does not require a separate .NET installation or DLL download.
 
 Keep the executable on a local drive or USB drive, close Codex, and then run it. Windows SmartScreen may show an unknown-publisher warning because the project does not currently use a paid code-signing certificate. Verify the downloaded file against `SHA256SUMS.txt` from the same release before running it.
@@ -73,6 +73,12 @@ The app stores computer-specific paths at:
 Windows user-profile paths are mapped to the account running the restore. For example, a backup from `C:\Users\OfficeUser\.codex` restores to the current computer's `CODEX_HOME` or `C:\Users\HomeUser\.codex`. Personal `.agents`, roaming AppData, and local AppData targets are mapped the same way. The source computer's user directory is not created on the destination.
 
 Codex Shuttle does not rewrite arbitrary path strings stored inside conversations, skill files, or configuration content. Keep workspace projects on the same absolute path, such as `E:\CodexWorkspace`, on both computers so those references remain valid.
+
+## Legacy Packages
+
+The package folder name is not part of the file format. A current package may use `CodexShuttle-Current` or another explicitly selected folder name. Compatibility is determined by `manifest.json`, the completion marker, and the checksum file.
+
+Schema 1 packages created by early test builds do not have the current checksum chain and may contain credentials. The app identifies them as legacy and refuses restore. Keep the old package unchanged for recovery purposes, then create a fresh schema 2 backup from the source computer with the current release. Renaming the folder does not upgrade it.
 
 ## Safety
 

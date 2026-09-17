@@ -382,6 +382,16 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return;
             }
 
+            if (manifest.SchemaVersion < 2)
+            {
+                _loadedRestorePackage = package;
+                RestoreTargets.Clear();
+                RestorePackageInfo = $"Legacy backup from {manifest.SourceComputer} / {manifest.SourceUser}, {manifest.CreatedAt:yyyy-MM-dd HH:mm}; schema {manifest.SchemaVersion}; credential exclusion is unknown; current checksum is missing.";
+                OperationStatus = "This legacy package cannot be restored safely. Keep it unchanged and create a new backup with the current app.";
+                InvalidateDryRun();
+                return;
+            }
+
             RestoreTargets.Clear();
             foreach (var workspace in manifest.WorkspacePaths.Where(item => item.Enabled && item.Exists))
             {

@@ -4,7 +4,7 @@ public sealed class BackupManifest
 {
     public int SchemaVersion { get; set; } = 2;
     public string AppName { get; set; } = "Codex Shuttle";
-    public string AppVersion { get; set; } = "0.2.1";
+    public string AppVersion { get; set; } = "0.2.2";
     public DateTimeOffset CreatedAt { get; set; }
     public string SourceComputer { get; set; } = string.Empty;
     public string SourceUser { get; set; } = string.Empty;
@@ -15,7 +15,7 @@ public sealed class BackupManifest
     public string AgentsHome { get; set; } = string.Empty;
     public string AgentsPackagePath { get; set; } = ".agents";
     public bool AgentsHomeExists { get; set; }
-    public bool CredentialsExcluded { get; set; } = true;
+    public bool CredentialsExcluded { get; set; }
     public string BackupRoot { get; set; } = string.Empty;
     public List<WorkspaceEntry> WorkspacePaths { get; set; } = new();
     public List<AppDataEntry> AppDataPaths { get; set; } = new();

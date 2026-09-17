@@ -31,6 +31,7 @@ public sealed class ManifestService
             CodexHomeExists = detection.CodexHomeExists,
             AgentsHome = detection.AgentsHome,
             AgentsHomeExists = detection.AgentsHomeExists,
+            CredentialsExcluded = true,
             BackupRoot = backupRoot,
             WorkspacePaths = detection.WorkspacePaths,
             AppDataPaths = detection.AppDataPaths,
