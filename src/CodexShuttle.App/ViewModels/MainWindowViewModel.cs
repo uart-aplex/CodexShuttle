@@ -502,6 +502,13 @@ public sealed class MainWindowViewModel : ViewModelBase
             OperationStatus = result.Success ? $"Backup created: {BackupDestination}" : result.Message;
             BackupProgressStatus = OperationStatus;
             AddBackupLog(OperationStatus);
+            if (!result.Success)
+            {
+                foreach (var error in result.Errors.TakeLast(40))
+                {
+                    AddBackupLog($"Detail: {error}");
+                }
+            }
         }
         catch (OperationCanceledException)
         {

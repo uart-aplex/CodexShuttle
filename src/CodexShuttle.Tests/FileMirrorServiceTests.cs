@@ -6,6 +6,20 @@ namespace CodexShuttle.Tests;
 public sealed class FileMirrorServiceTests
 {
     [TestMethod]
+    public void BuildFailureDiagnostics_IncludesExitCodeAndTailWithoutFloodingLog()
+    {
+        var output = Enumerable.Range(1, 100).Select(index => $"output {index}").ToList();
+        var errors = new List<string> { "localized copy error" };
+
+        var diagnostics = FileMirrorService.BuildFailureDiagnostics(8, output, errors);
+
+        Assert.AreEqual("Robocopy failed with exit code 8.", diagnostics[0]);
+        CollectionAssert.Contains(diagnostics.ToList(), "localized copy error");
+        CollectionAssert.Contains(diagnostics.ToList(), "output 100");
+        Assert.IsTrue(diagnostics.Count <= 41);
+    }
+
+    [TestMethod]
     public async Task MirrorAsync_WithSanitizedProfile_PreservesDestinationCredentials()
     {
         var root = Path.Combine(Path.GetTempPath(), "CodexShuttleTests", Guid.NewGuid().ToString("N"));

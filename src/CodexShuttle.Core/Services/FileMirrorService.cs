@@ -34,8 +34,9 @@ public sealed class FileMirrorService
         startInfo.ArgumentList.Add(sourcePath);
         startInfo.ArgumentList.Add(destinationPath);
         startInfo.ArgumentList.Add("/MIR");
-        startInfo.ArgumentList.Add("/R:1");
-        startInfo.ArgumentList.Add("/W:1");
+        startInfo.ArgumentList.Add("/Z");
+        startInfo.ArgumentList.Add("/R:3");
+        startInfo.ArgumentList.Add("/W:2");
         startInfo.ArgumentList.Add("/XJ");
         startInfo.ArgumentList.Add("/FFT");
         startInfo.ArgumentList.Add("/NP");
@@ -107,7 +108,14 @@ public sealed class FileMirrorService
 
         if (process.ExitCode >= 8)
         {
-            return OperationResult.Fail("Robocopy failed.", output, error);
+            var diagnostics = BuildFailureDiagnostics(process.ExitCode, outputLines, errorLines);
+            progress?.Report(diagnostics[0]);
+            foreach (var line in diagnostics.Skip(1))
+            {
+                progress?.Report($"Robocopy detail: {line}");
+            }
+
+            return OperationResult.Fail(diagnostics[0], diagnostics.Skip(1).ToArray());
         }
 
         var result = OperationResult.Ok($"Robocopy completed with exit code {process.ExitCode}.");
@@ -196,6 +204,28 @@ public sealed class FileMirrorService
         }
 
         lines.Add(line);
+    }
+
+    internal static IReadOnlyList<string> BuildFailureDiagnostics(
+        int exitCode,
+        IReadOnlyList<string> outputLines,
+        IReadOnlyList<string> errorLines)
+    {
+        const int maxDetailLines = 40;
+        var details = outputLines
+            .TakeLast(35)
+            .Concat(errorLines.TakeLast(5))
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .Distinct(StringComparer.Ordinal)
+            .TakeLast(maxDetailLines)
+            .ToList();
+
+        var result = new List<string> { $"Robocopy failed with exit code {exitCode}." };
+        result.AddRange(details.Count > 0
+            ? details
+            : ["Robocopy did not return diagnostic text."]);
+        return result;
     }
 
     private static void TryDelete(string path)
