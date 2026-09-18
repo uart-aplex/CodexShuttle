@@ -509,6 +509,11 @@ public sealed class MainWindowViewModel : ViewModelBase
                     AddBackupLog($"Detail: {error}");
                 }
             }
+
+            foreach (var warning in result.Warnings.TakeLast(20))
+            {
+                AddBackupLog($"Warning: {warning}");
+            }
         }
         catch (OperationCanceledException)
         {

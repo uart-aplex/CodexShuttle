@@ -6,6 +6,7 @@ namespace CodexShuttle.Core.Services;
 public sealed class BackupTransactionService
 {
     private const string JournalFileName = "journal.json";
+    private const string CommittedMarkerFileName = "committed.marker";
     private readonly DryRunService _dryRunService = new();
 
     public async Task PrepareAsync(
@@ -91,10 +92,18 @@ public sealed class BackupTransactionService
         }
     }
 
-    public Task CommitAsync(string backupRoot)
+    public async Task CommitAsync(string backupRoot)
     {
-        DeleteTransactionDirectory(GetTransactionRoot(backupRoot));
-        return Task.CompletedTask;
+        var transactionRoot = GetTransactionRoot(backupRoot);
+        if (!Directory.Exists(transactionRoot))
+        {
+            return;
+        }
+
+        await File.WriteAllTextAsync(
+            Path.Combine(transactionRoot, CommittedMarkerFileName),
+            $"CommittedAt={DateTimeOffset.Now:O}");
+        DeleteTransactionDirectory(transactionRoot);
     }
 
     public async Task RecoverAsync(
@@ -104,8 +113,22 @@ public sealed class BackupTransactionService
     {
         var transactionRoot = GetTransactionRoot(backupRoot);
         var journalPath = Path.Combine(transactionRoot, JournalFileName);
+        if (!Directory.Exists(transactionRoot))
+        {
+            return;
+        }
+
+        if (File.Exists(Path.Combine(transactionRoot, CommittedMarkerFileName)))
+        {
+            progress?.Report("Cleaning a committed backup transaction...");
+            DeleteTransactionDirectory(transactionRoot);
+            return;
+        }
+
         if (!File.Exists(journalPath))
         {
+            progress?.Report("Cleaning an orphaned backup transaction folder...");
+            DeleteTransactionDirectory(transactionRoot);
             return;
         }
 
@@ -134,6 +157,7 @@ public sealed class BackupTransactionService
             {
                 if (File.Exists(destination))
                 {
+                    ClearReadOnly(destination);
                     File.Delete(destination);
                 }
                 continue;
@@ -146,6 +170,7 @@ public sealed class BackupTransactionService
 
             if (File.Exists(destination))
             {
+                ClearReadOnly(destination);
                 File.Delete(destination);
             }
 
@@ -161,9 +186,25 @@ public sealed class BackupTransactionService
 
     private static void DeleteTransactionDirectory(string transactionRoot)
     {
-        if (Directory.Exists(transactionRoot))
+        if (!Directory.Exists(transactionRoot))
         {
-            Directory.Delete(transactionRoot, recursive: true);
+            return;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(transactionRoot, "*", SearchOption.AllDirectories))
+        {
+            ClearReadOnly(file);
+        }
+
+        Directory.Delete(transactionRoot, recursive: true);
+    }
+
+    private static void ClearReadOnly(string path)
+    {
+        var attributes = File.GetAttributes(path);
+        if ((attributes & FileAttributes.ReadOnly) != 0)
+        {
+            File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
         }
     }
 

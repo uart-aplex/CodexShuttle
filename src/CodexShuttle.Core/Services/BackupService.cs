@@ -66,6 +66,7 @@ public sealed class BackupService
         var inProgressMarker = Path.Combine(backupRoot, InProgressMarkerFileName);
         var completeMarker = Path.Combine(backupRoot, CompleteMarkerFileName);
         await File.WriteAllTextAsync(inProgressMarker, $"StartedAt={DateTimeOffset.Now:O}", cancellationToken);
+        var completionMarkerWritten = false;
 
         try
         {
@@ -145,6 +146,7 @@ public sealed class BackupService
                     completeMarker,
                     $"CompletedAt={DateTimeOffset.Now:O}{Environment.NewLine}SchemaVersion={manifest.SchemaVersion}{Environment.NewLine}ChecksumFileSha256={checksumHash}",
                     cancellationToken);
+                completionMarkerWritten = true;
             }
 
             await _transactionService.CommitAsync(backupRoot);
@@ -159,6 +161,19 @@ public sealed class BackupService
         }
         catch (Exception ex)
         {
+            if (completionMarkerWritten)
+            {
+                if (File.Exists(inProgressMarker))
+                {
+                    File.Delete(inProgressMarker);
+                }
+
+                progress?.Report("Backup completed and verified, but rollback cleanup will be retried next time.");
+                var completedResult = OperationResult.Ok("Backup completed with a cleanup warning.");
+                completedResult.Warnings.Add(ex.Message);
+                return completedResult;
+            }
+
             try
             {
                 await RollBackFailedBackupAsync(backupRoot, inProgressMarker, progress);
