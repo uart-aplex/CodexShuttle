@@ -5,13 +5,21 @@ namespace CodexShuttle.Core.Services;
 public sealed class RestorePathResolver
 {
     private readonly string? _codexHomeOverride;
+    private readonly string _currentUserProfile;
+    private readonly bool _hasUserProfileOverride;
 
-    public RestorePathResolver(string? codexHomeOverride = null)
+    public RestorePathResolver(string? codexHomeOverride = null, string? userProfileOverride = null)
     {
         _codexHomeOverride = string.IsNullOrWhiteSpace(codexHomeOverride)
             ? null
             : Path.GetFullPath(codexHomeOverride);
+        _hasUserProfileOverride = !string.IsNullOrWhiteSpace(userProfileOverride);
+        _currentUserProfile = !_hasUserProfileOverride
+            ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            : Path.GetFullPath(userProfileOverride!);
     }
+
+    public string GetCurrentUserProfile() => _currentUserProfile;
 
     public string GetCurrentCodexHome()
     {
@@ -23,7 +31,7 @@ public sealed class RestorePathResolver
         var configuredCodexHome = Environment.GetEnvironmentVariable("CODEX_HOME");
         return !string.IsNullOrWhiteSpace(configuredCodexHome)
             ? Path.GetFullPath(Environment.ExpandEnvironmentVariables(configuredCodexHome))
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
+            : Path.Combine(_currentUserProfile, ".codex");
     }
 
     public string ResolveCodexHome(BackupManifest manifest)
@@ -38,7 +46,7 @@ public sealed class RestorePathResolver
 
     public string ResolveAgentsHome(BackupManifest manifest)
     {
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".agents");
+        return Path.Combine(_currentUserProfile, ".agents");
     }
 
     public string ResolveAppDataTarget(AppDataEntry appData)
@@ -51,14 +59,20 @@ public sealed class RestorePathResolver
         if (roamingIndex >= 0)
         {
             var relative = sourcePath[(roamingIndex + roamingMarker.Length)..];
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), relative);
+            var roamingRoot = _hasUserProfileOverride
+                ? Path.Combine(_currentUserProfile, "AppData", "Roaming")
+                : Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            return Path.Combine(roamingRoot, relative);
         }
 
         var localIndex = sourcePath.IndexOf(localMarker, StringComparison.OrdinalIgnoreCase);
         if (localIndex >= 0)
         {
             var relative = sourcePath[(localIndex + localMarker.Length)..];
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), relative);
+            var localRoot = _hasUserProfileOverride
+                ? Path.Combine(_currentUserProfile, "AppData", "Local")
+                : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            return Path.Combine(localRoot, relative);
         }
 
         return sourcePath;

@@ -6,5 +6,6 @@ public sealed class MirrorPlanItem
     public string SourcePath { get; init; } = string.Empty;
     public string DestinationPath { get; init; } = string.Empty;
     public bool IsDirectory { get; init; } = true;
+    public bool RemapUserProfilePaths { get; init; }
     public FileMirrorOptions MirrorOptions { get; init; } = new();
 }

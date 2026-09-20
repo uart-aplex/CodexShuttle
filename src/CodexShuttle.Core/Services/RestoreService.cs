@@ -10,6 +10,7 @@ public sealed class RestoreService
     private readonly BackupPackageValidator _packageValidator;
     private readonly ChecksumService _checksumService;
     private readonly StoragePreflightService _storagePreflightService;
+    private readonly ProfilePathRemapService _profilePathRemapService;
 
     public RestoreService(
         FileMirrorService fileMirrorService,
@@ -22,6 +23,7 @@ public sealed class RestoreService
         _packageValidator = new BackupPackageValidator();
         _checksumService = new ChecksumService();
         _storagePreflightService = new StoragePreflightService();
+        _profilePathRemapService = new ProfilePathRemapService(pathResolver ?? new RestorePathResolver());
     }
 
     public async Task<OperationResult> RestoreAsync(
@@ -95,8 +97,19 @@ public sealed class RestoreService
             }
         }
 
-        progress?.Report("Restore completed and package checksums were verified.");
-        return OperationResult.Ok("Restore completed.");
+        progress?.Report("Mapping source user-profile paths to this Windows account...");
+        var remapResult = await _profilePathRemapService.RemapAsync(
+            manifest,
+            plan,
+            cancellationToken,
+            progress);
+        if (!remapResult.Success)
+        {
+            return remapResult;
+        }
+
+        progress?.Report($"Restore completed. {remapResult.Message}");
+        return OperationResult.Ok($"Restore completed. {remapResult.Message}");
     }
 
     public Task<OperationResult> RestoreAsync(

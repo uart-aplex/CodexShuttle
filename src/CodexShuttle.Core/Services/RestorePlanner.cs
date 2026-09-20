@@ -56,6 +56,7 @@ public sealed class RestorePlanner
                     Name = "Personal plugin marketplace (.agents)",
                     SourcePath = agentsSource,
                     DestinationPath = agentsTarget,
+                    RemapUserProfilePaths = true,
                     MirrorOptions = CodexMigrationPolicy.CredentialOnlyOptions
                 });
             }
@@ -78,6 +79,7 @@ public sealed class RestorePlanner
                     Name = $"AppData: {appData.SourcePath}",
                     SourcePath = source,
                     DestinationPath = target,
+                    RemapUserProfilePaths = true,
                     MirrorOptions = CodexMigrationPolicy.SanitizedProfileOptions
                 });
             }
@@ -103,6 +105,7 @@ public sealed class RestorePlanner
                 Name = "Codex profile, history, skills and plugins",
                 SourcePath = codexSource,
                 DestinationPath = codexTarget,
+                RemapUserProfilePaths = true,
                 MirrorOptions = CodexMigrationPolicy.SanitizedProfileOptions
             });
             return;
@@ -123,6 +126,7 @@ public sealed class RestorePlanner
                 Name = $"Codex {directoryName}",
                 SourcePath = source,
                 DestinationPath = target,
+                RemapUserProfilePaths = true,
                 MirrorOptions = CodexMigrationPolicy.CredentialOnlyOptions
             });
         }
@@ -142,7 +146,8 @@ public sealed class RestorePlanner
                 Name = $"Codex state: {fileName}",
                 SourcePath = source,
                 DestinationPath = target,
-                IsDirectory = false
+                IsDirectory = false,
+                RemapUserProfilePaths = true
             });
         }
     }

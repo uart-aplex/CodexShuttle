@@ -406,8 +406,12 @@ public sealed class MainWindowViewModel : ViewModelBase
             }
 
             _loadedRestorePackage = package;
-            var currentCodexHome = new RestorePathResolver(_settings.CodexHomeOverride).GetCurrentCodexHome();
-            RestorePackageInfo = $"From {manifest.SourceComputer} / {manifest.SourceUser}, {manifest.CreatedAt:yyyy-MM-dd HH:mm}; user data restores to {currentCodexHome}; schema {manifest.SchemaVersion}; credentials excluded: {(manifest.CredentialsExcluded ? "Yes" : "No")}.";
+            var restorePathResolver = new RestorePathResolver(_settings.CodexHomeOverride);
+            var currentCodexHome = restorePathResolver.GetCurrentCodexHome();
+            var profileMapping = string.IsNullOrWhiteSpace(manifest.SourceUserProfile)
+                ? "source profile metadata is unavailable"
+                : $"embedded profile paths map from {manifest.SourceUserProfile} to {restorePathResolver.GetCurrentUserProfile()}";
+            RestorePackageInfo = $"From {manifest.SourceComputer} / {manifest.SourceUser}, {manifest.CreatedAt:yyyy-MM-dd HH:mm}; user data restores to {currentCodexHome}; {profileMapping}; schema {manifest.SchemaVersion}; credentials excluded: {(manifest.CredentialsExcluded ? "Yes" : "No")}.";
             OperationStatus = "Restore package loaded. Workspace paths are fixed to their original locations. Run Dry Run to verify them.";
             InvalidateDryRun();
         }
@@ -605,7 +609,12 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return _dryRunService.ComparePlan(plan);
             });
 
-            DryRunSummary = $"All targets: add {result.FilesToCopy:N0}, overwrite {result.FilesToOverwrite:N0}, delete {result.FilesToDelete:N0}; copy {ReportService.FormatBytes(result.TotalBytesToCopy)}.";
+            var currentProfile = pathResolver.GetCurrentUserProfile();
+            var profileNote = !string.IsNullOrWhiteSpace(manifest.SourceUserProfile)
+                              && !manifest.SourceUserProfile.Equals(currentProfile, StringComparison.OrdinalIgnoreCase)
+                ? $" Embedded paths under {manifest.SourceUserProfile} will map to {currentProfile}; fixed workspace paths remain unchanged."
+                : string.Empty;
+            DryRunSummary = $"All targets: add {result.FilesToCopy:N0}, overwrite {result.FilesToOverwrite:N0}, delete {result.FilesToDelete:N0}; copy {ReportService.FormatBytes(result.TotalBytesToCopy)}.{profileNote}";
             OperationStatus = result.FilesToDelete > 0
                 ? $"Dry Run completed. Review warning: {result.FilesToDelete:N0} destination-only files will be deleted."
                 : "Dry Run completed. No destination-only files will be deleted.";
@@ -630,7 +639,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         var answer = System.Windows.MessageBox.Show(
-            $"Restore mode: {SelectedMigrationMode}\n\n{DryRunSummary}\n\nMirror restore can overwrite files and delete destination-only files. Credentials are not migrated. Continue?",
+            $"Restore mode: {SelectedMigrationMode}\n\n{DryRunSummary}\n\nMirror restore can overwrite files and delete destination-only files. Embedded Windows user-profile paths are mapped to this account; fixed workspace paths are unchanged. Credentials are not migrated. Continue?",
             "Confirm Restore",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
