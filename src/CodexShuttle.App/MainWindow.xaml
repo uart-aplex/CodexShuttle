@@ -230,6 +230,7 @@
                             <StackPanel Orientation="Horizontal">
                                 <Button Content="Dry Run" Command="{Binding DryRunCommand}" />
                                 <Button Content="Restore" Command="{Binding RestoreCommand}" />
+                                <Button Content="Repair Conversation Paths" Command="{Binding RepairConversationPathsCommand}" />
                                 <Button Content="Cancel Restore" Command="{Binding CancelRestoreCommand}"
                                         Visibility="{Binding IsRestoreRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             </StackPanel>

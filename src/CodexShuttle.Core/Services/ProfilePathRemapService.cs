@@ -245,6 +245,11 @@ public sealed class ProfilePathRemapService
         };
         await using var connection = new SqliteConnection(builder.ToString());
         await connection.OpenAsync(cancellationToken);
+        connection.CreateFunction<string, string>("shuttle_remap_path", value =>
+        {
+            var replacements = 0;
+            return TransformAvailableText(value, true, mappings, out _, ref replacements);
+        }, isDeterministic: true);
 
         var tables = new List<(string Name, string Sql)>();
         await using (var tableCommand = connection.CreateCommand())
@@ -279,19 +284,11 @@ public sealed class ProfilePathRemapService
                 {
                     await using var update = connection.CreateCommand();
                     update.Transaction = transaction;
-                    var valueExpression = QuoteIdentifier(column);
-                    var predicates = new List<string>();
-                    for (var index = 0; index < mappings.Count; index++)
-                    {
-                        valueExpression = $"replace({valueExpression}, $old{index}, $new{index})";
-                        predicates.Add($"instr({QuoteIdentifier(column)}, $old{index}) > 0");
-                        update.Parameters.AddWithValue($"$old{index}", mappings[index].Source);
-                        update.Parameters.AddWithValue($"$new{index}", mappings[index].Destination);
-                    }
-
+                    var identifier = QuoteIdentifier(column);
                     update.CommandText =
-                        $"UPDATE {QuoteIdentifier(table.Name)} SET {QuoteIdentifier(column)} = {valueExpression} " +
-                        $"WHERE typeof({QuoteIdentifier(column)}) = 'text' AND ({string.Join(" OR ", predicates)})";
+                        $"UPDATE {QuoteIdentifier(table.Name)} SET {identifier} = shuttle_remap_path({identifier}) " +
+                        $"WHERE CASE WHEN typeof({identifier}) = 'text' " +
+                        $"THEN {identifier} <> shuttle_remap_path({identifier}) ELSE 0 END";
                     changedRows += await update.ExecuteNonQueryAsync(cancellationToken);
                 }
             }
@@ -412,7 +409,7 @@ public sealed class ProfilePathRemapService
         var maxSourceLength = mappings.Max(item => item.Source.Length);
         var processLimit = final
             ? input.Length
-            : Math.Max(0, input.Length - maxSourceLength + 1);
+            : Math.Max(0, input.Length - maxSourceLength);
         var output = new StringBuilder(input.Length);
         var position = 0;
         while (position < processLimit)
@@ -427,7 +424,8 @@ public sealed class ProfilePathRemapService
                         mapping.Source,
                         0,
                         mapping.Source.Length,
-                        StringComparison.OrdinalIgnoreCase) == 0)
+                        StringComparison.OrdinalIgnoreCase) == 0
+                    && IsPathBoundary(input, position + mapping.Source.Length))
                 {
                     match = mapping;
                     break;
@@ -450,6 +448,9 @@ public sealed class ProfilePathRemapService
         carry = input[position..];
         return output.ToString();
     }
+
+    private static bool IsPathBoundary(string text, int position) =>
+        position == text.Length || text[position] is '\\' or '/' or '"' or '\'' or '\r' or '\n' or '\t' or ' ';
 
     private static (Encoding Encoding, int PreambleLength)? DetectEncoding(string path)
     {

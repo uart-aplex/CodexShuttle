@@ -77,6 +77,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         DryRunCommand = new RelayCommand(DryRunAsync, () => !string.IsNullOrWhiteSpace(RestorePackage) && !IsAnyOperationRunning);
         RestoreCommand = new RelayCommand(RestoreAsync, () => !string.IsNullOrWhiteSpace(RestorePackage) && HasCurrentDryRun && !IsAnyOperationRunning);
         CancelRestoreCommand = new RelayCommand(CancelRestoreAsync, () => IsRestoreRunning);
+        RepairConversationPathsCommand = new RelayCommand(RepairConversationPathsAsync, () => !IsAnyOperationRunning);
 
         _ = RefreshAsync();
         if (!string.IsNullOrWhiteSpace(_restorePackage))
@@ -97,6 +98,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public RelayCommand DryRunCommand { get; }
     public RelayCommand RestoreCommand { get; }
     public RelayCommand CancelRestoreCommand { get; }
+    public RelayCommand RepairConversationPathsCommand { get; }
     public ObservableCollection<PathStatusViewModel> Workspaces { get; } = new();
     public ObservableCollection<PathStatusViewModel> AppDataPaths { get; } = new();
     public ObservableCollection<string> Warnings { get; } = new();
@@ -662,6 +664,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         IsRestoreRunning = true;
         _restoreCancellation = new CancellationTokenSource();
         RestoreLog.Clear();
+        AddRestoreLog($"Codex Shuttle {typeof(MainWindowViewModel).Assembly.GetName().Version}; restore to {new RestorePathResolver(_settings.CodexHomeOverride).GetCurrentCodexHome()}");
         var pathResolver = new RestorePathResolver(_settings.CodexHomeOverride);
         var service = new RestoreService(_fileMirrorService, _manifestService, pathResolver);
         var progress = new Progress<string>(message =>
@@ -682,9 +685,17 @@ public sealed class MainWindowViewModel : ViewModelBase
                     cancellationToken: cancellationToken,
                     progress: progress),
                 cancellationToken);
-            OperationStatus = result.Success ? "Restore completed." : result.Message;
+            OperationStatus = result.Message;
             RestoreProgressStatus = OperationStatus;
             AddRestoreLog(OperationStatus);
+            foreach (var detail in result.Errors)
+            {
+                AddRestoreLog($"Detail: {detail}");
+            }
+            foreach (var warning in result.Warnings)
+            {
+                AddRestoreLog($"Warning: {warning}");
+            }
         }
         catch (OperationCanceledException)
         {
@@ -700,6 +711,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         finally
         {
+            SaveRestoreLog();
             _restoreCancellation?.Dispose();
             _restoreCancellation = null;
             IsRestoreRunning = false;
@@ -717,6 +729,68 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         return Task.CompletedTask;
+    }
+
+    private async Task RepairConversationPathsAsync()
+    {
+        if (_processService.IsCodexRunning())
+        {
+            System.Windows.MessageBox.Show("Please close Codex before repairing conversation paths.", "Codex Shuttle", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var codexHome = new RestorePathResolver(_settings.CodexHomeOverride).GetCurrentCodexHome();
+        IsRestoreRunning = true;
+        _restoreCancellation = new CancellationTokenSource();
+        RestoreLog.Clear();
+        AddRestoreLog($"Codex Shuttle {typeof(MainWindowViewModel).Assembly.GetName().Version}; repair conversation paths in {codexHome}");
+        var progress = new Progress<string>(message =>
+        {
+            RestoreProgressStatus = message;
+            AddRestoreLog(message);
+        });
+        try
+        {
+            var token = _restoreCancellation.Token;
+            var result = await Task.Run(() => new RolloutPathService().CheckAsync(codexHome, true, token, progress), token);
+            OperationStatus = result.Message;
+            RestoreProgressStatus = result.Message;
+            AddRestoreLog(result.Message);
+            foreach (var error in result.Errors) AddRestoreLog($"Detail: {error}");
+        }
+        catch (OperationCanceledException)
+        {
+            OperationStatus = "Conversation path repair canceled.";
+            AddRestoreLog(OperationStatus);
+        }
+        catch (Exception ex)
+        {
+            OperationStatus = $"Conversation path repair failed: {ex.Message}";
+            AddRestoreLog(OperationStatus);
+        }
+        finally
+        {
+            SaveRestoreLog();
+            _restoreCancellation.Dispose();
+            _restoreCancellation = null;
+            IsRestoreRunning = false;
+        }
+    }
+
+    private void SaveRestoreLog()
+    {
+        try
+        {
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexShuttle");
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, "last-restore.log");
+            File.WriteAllLines(path, RestoreLog);
+            AddRestoreLog($"Report saved: {path}");
+        }
+        catch (Exception ex)
+        {
+            AddRestoreLog($"Could not save restore report: {ex.Message}");
+        }
     }
 
     private void ApplyInspection(CodexInspectionResult inspection)
@@ -848,6 +922,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         DryRunCommand.RaiseCanExecuteChanged();
         RestoreCommand.RaiseCanExecuteChanged();
         CancelRestoreCommand.RaiseCanExecuteChanged();
+        RepairConversationPathsCommand.RaiseCanExecuteChanged();
     }
 
     private static string? BrowseForFolder(string description, string currentPath)

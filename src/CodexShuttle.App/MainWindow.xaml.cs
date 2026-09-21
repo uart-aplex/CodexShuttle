@@ -8,6 +8,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title = $"Codex Shuttle {typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}";
         DataContext = new MainWindowViewModel();
     }
 

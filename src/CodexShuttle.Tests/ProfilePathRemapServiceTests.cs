@@ -112,4 +112,33 @@ public sealed class ProfilePathRemapServiceTests
         command.Parameters.AddWithValue("$cwd", cwd);
         command.ExecuteNonQuery();
     }
+
+    [TestMethod]
+    public async Task RemapAsync_UartToUartc_DoesNotReplaceOutputTwiceOrAnotherUsersPrefix()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "CodexShuttleTests", Guid.NewGuid().ToString("N"));
+        var sourceProfile = Path.Combine(root, "uart");
+        var targetProfile = Path.Combine(root, "uartc");
+        var targetHome = Path.Combine(targetProfile, ".codex");
+        var sourceHome = Path.Combine(sourceProfile, ".codex");
+        Directory.CreateDirectory(targetHome);
+        var database = Path.Combine(targetHome, "state_5.sqlite");
+        var anotherUser = sourceProfile + @"c\Documents";
+        CreateSqlite(database, sourceHome.ToUpperInvariant() + @"\sessions\test.jsonl", anotherUser);
+        try
+        {
+            var service = new ProfilePathRemapService(new RestorePathResolver(targetHome, targetProfile));
+            var result = await service.RemapAsync(new BackupManifest { SourceUserProfile = sourceProfile, CodexHome = sourceHome },
+                [new MirrorPlanItem { IsDirectory = false, RemapUserProfilePaths = true, DestinationPath = database }]);
+            Assert.IsTrue(result.Success, result.Message);
+            using var connection = RestoreRolloutRegressionTests.OpenDatabase(database);
+            using var query = connection.CreateCommand();
+            query.CommandText = "SELECT rollout_path, cwd FROM threads";
+            using var reader = query.ExecuteReader();
+            Assert.IsTrue(reader.Read());
+            Assert.AreEqual(targetHome + @"\sessions\test.jsonl", reader.GetString(0));
+            Assert.AreEqual(anotherUser, reader.GetString(1));
+        }
+        finally { Directory.Delete(root, true); }
+    }
 }

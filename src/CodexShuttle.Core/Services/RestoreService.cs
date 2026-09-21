@@ -11,6 +11,8 @@ public sealed class RestoreService
     private readonly ChecksumService _checksumService;
     private readonly StoragePreflightService _storagePreflightService;
     private readonly ProfilePathRemapService _profilePathRemapService;
+    private readonly RestorePathResolver _pathResolver;
+    private readonly RolloutPathService _rolloutPaths = new();
 
     public RestoreService(
         FileMirrorService fileMirrorService,
@@ -18,6 +20,7 @@ public sealed class RestoreService
         RestorePathResolver? pathResolver = null)
     {
         _fileMirrorService = fileMirrorService;
+        _pathResolver = pathResolver ?? new RestorePathResolver();
         _manifestService = manifestService;
         _planner = new RestorePlanner(pathResolver);
         _packageValidator = new BackupPackageValidator();
@@ -74,6 +77,13 @@ public sealed class RestoreService
             return checksumResult;
         }
 
+        if (manifest.CodexHomeExists)
+        {
+            var packagePaths = await _rolloutPaths.CheckAsync(
+                Path.Combine(backupRoot, manifest.CodexPackagePath), false, cancellationToken, progress);
+            if (!packagePaths.Success) return packagePaths;
+        }
+
         foreach (var item in plan)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -106,6 +116,14 @@ public sealed class RestoreService
         if (!remapResult.Success)
         {
             return remapResult;
+        }
+
+        if (manifest.CodexHomeExists)
+        {
+            var restoredPaths = await _rolloutPaths.CheckAsync(
+                _pathResolver.ResolveCodexHome(manifest), true, cancellationToken, progress);
+            if (!restoredPaths.Success) return restoredPaths;
+            progress?.Report(restoredPaths.Message);
         }
 
         progress?.Report($"Restore completed. {remapResult.Message}");

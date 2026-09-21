@@ -57,7 +57,7 @@ dotnet publish src/CodexShuttle.App/CodexShuttle.App.csproj -p:PublishProfile=Po
 
 ## Portable Release
 
-Non-developers can download the `CodexShuttle-v0.2.5-win-x64.exe` asset from the
+Non-developers can download the `CodexShuttle-v0.2.6-win-x64.exe` asset from the
 [latest GitHub release](https://github.com/uart-aplex/CodexShuttle/releases/latest). It is a self-contained single-file app and does not require a separate .NET installation or DLL download.
 
 Keep the executable on a local drive or USB drive, close Codex, and then run it. Windows SmartScreen may show an unknown-publisher warning because the project does not currently use a paid code-signing certificate. Verify the downloaded file against `SHA256SUMS.txt` from the same release before running it.
@@ -73,6 +73,10 @@ The app stores computer-specific paths at:
 Windows user-profile paths are mapped to the account running the restore. For example, a backup from `C:\Users\OfficeUser\.codex` restores to the current computer's `CODEX_HOME` or `C:\Users\HomeUser\.codex`. Personal `.agents`, roaming AppData, and local AppData targets are mapped the same way. The source computer's user directory is not created on the destination.
 
 After copying, Codex Shuttle also remaps embedded source-profile paths in restored UTF text files and SQLite text fields, including `threads.rollout_path`, JSON-escaped paths, and forward-slash paths. Credentials remain excluded. Only the recorded Codex Home, `.agents`, AppData, and Windows user-profile roots are remapped; fixed workspace paths such as `E:\CodexWorkspace` are deliberately left unchanged so project references remain valid.
+
+Restore now checks that indexed conversation files are present in the package before overwriting destinations. After copying, it resolves conversation indexes against the destination session files, including entries left behind by earlier migrations. SQLite path matching is case-insensitive, respects directory boundaries, and does not replace newly generated paths again. Missing or ambiguous conversation files cause an explicit failure.
+
+If files have already been restored but Codex still tries to open another Windows user's session path, close Codex and select **Restore > Repair Conversation Paths**. This operates on the Codex Home shown in Inspect, updates conversation indexes in a SQLite transaction, and does not copy workspaces or rewrite conversation files. It does not recover missing session files. A repair/restore report is saved to `%LOCALAPPDATA%\CodexShuttle\last-restore.log`. If the problem persists after reopening Codex, that report identifies the profile and database actually checked; a different configured database location needs separate investigation.
 
 ## Legacy Packages
 
