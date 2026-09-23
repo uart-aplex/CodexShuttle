@@ -10,7 +10,8 @@ public sealed class RolloutPathService
         string codexHome,
         bool repair,
         CancellationToken cancellationToken = default,
-        IProgress<string>? progress = null)
+        IProgress<string>? progress = null,
+        bool requireResolvedPaths = false)
     {
         if (!Directory.Exists(codexHome))
         {
@@ -19,6 +20,7 @@ public sealed class RolloutPathService
 
         var checkedPaths = 0;
         var changedPaths = 0;
+        var skippedDormantPaths = 0;
         try
         {
             var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -40,6 +42,9 @@ public sealed class RolloutPathService
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 progress?.Report($"Checking conversation paths: {database}");
+                var dormantLegacy = Path.GetDirectoryName(database)!.Equals(Path.Combine(codexHome, "sqlite"), StringComparison.OrdinalIgnoreCase)
+                    && Directory.EnumerateFiles(codexHome, "state_*.sqlite").Any()
+                    && File.Exists(Path.Combine(codexHome, ".app-server-state-reconciled-v1"));
                 var attributes = File.GetAttributes(database);
                 if (repair && attributes.HasFlag(FileAttributes.ReadOnly))
                     File.SetAttributes(database, attributes & ~FileAttributes.ReadOnly);
@@ -67,9 +72,19 @@ public sealed class RolloutPathService
                         {
                             var original = reader.GetString(0);
                             var target = Resolve(original, files, byName);
+                            // Desktop has already reconciled this legacy index. Retain obsolete
+                            // entries without claiming they are valid or deleting historical data.
+                            if (target is null && dormantLegacy)
+                            {
+                                skippedDormantPaths++;
+                                continue;
+                            }
                             if (target is null)
                                 return OperationResult.Fail("A conversation points to a missing or ambiguous rollout file.",
                                     $"Database: {database}", $"Unresolved rollout: {original}");
+                            if (requireResolvedPaths && !Normalize(original).Equals(Normalize(target), StringComparison.OrdinalIgnoreCase))
+                                return OperationResult.Fail("A conversation index still points outside the restored session location.",
+                                    $"Database: {database}", $"Stored rollout: {original}", $"Expected rollout: {target}");
                             // Opening verifies access as well as existence; no conversation text is logged.
                             using (File.Open(target, FileMode.Open, FileAccess.Read, FileShare.Read)) { }
                             checkedPaths++;
@@ -105,7 +120,10 @@ public sealed class RolloutPathService
             return OperationResult.Fail("Conversation path validation failed.", ex.Message);
         }
 
-        return OperationResult.Ok($"Verified {checkedPaths:N0} conversation file paths; repaired {changedPaths:N0} index entries.");
+        var result = OperationResult.Ok($"Verified {checkedPaths:N0} conversation file paths; repaired {changedPaths:N0} index entries.");
+        if (skippedDormantPaths > 0)
+            result.Warnings.Add($"Skipped {skippedDormantPaths:N0} unavailable entries in an already-reconciled legacy index; active indexes were checked.");
+        return result;
     }
 
     private static IEnumerable<string> EnumerateStateDatabases(string codexHome)
@@ -115,8 +133,6 @@ public sealed class RolloutPathService
             if (!Directory.Exists(directory)) continue;
             var databases = Directory.GetFiles(directory, "state_*.sqlite");
             foreach (var path in databases) yield return path;
-            // The nested location is a legacy fallback, not a second active index.
-            if (databases.Length > 0) yield break;
         }
     }
 

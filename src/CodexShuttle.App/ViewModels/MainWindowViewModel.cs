@@ -757,6 +757,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             RestoreProgressStatus = result.Message;
             AddRestoreLog(result.Message);
             foreach (var error in result.Errors) AddRestoreLog($"Detail: {error}");
+            foreach (var warning in result.Warnings) AddRestoreLog($"Warning: {warning}");
         }
         catch (OperationCanceledException)
         {

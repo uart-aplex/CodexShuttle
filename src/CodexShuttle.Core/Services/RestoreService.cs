@@ -107,6 +107,19 @@ public sealed class RestoreService
             }
         }
 
+        var repairSummary = string.Empty;
+        var warnings = new List<string>();
+        if (manifest.CodexHomeExists)
+        {
+            progress?.Report("Automatically repairing restored conversation paths...");
+            var repaired = await _rolloutPaths.CheckAsync(
+                _pathResolver.ResolveCodexHome(manifest), true, cancellationToken, progress);
+            if (!repaired.Success) return repaired;
+            repairSummary = repaired.Message;
+            warnings.AddRange(repaired.Warnings);
+            progress?.Report(repairSummary);
+        }
+
         progress?.Report("Mapping source user-profile paths to this Windows account...");
         var remapResult = await _profilePathRemapService.RemapAsync(
             manifest,
@@ -120,14 +133,17 @@ public sealed class RestoreService
 
         if (manifest.CodexHomeExists)
         {
+            progress?.Report("Verifying saved conversation paths after all restore steps...");
             var restoredPaths = await _rolloutPaths.CheckAsync(
-                _pathResolver.ResolveCodexHome(manifest), true, cancellationToken, progress);
+                _pathResolver.ResolveCodexHome(manifest), false, cancellationToken, progress, requireResolvedPaths: true);
             if (!restoredPaths.Success) return restoredPaths;
             progress?.Report(restoredPaths.Message);
         }
 
-        progress?.Report($"Restore completed. {remapResult.Message}");
-        return OperationResult.Ok($"Restore completed. {remapResult.Message}");
+        var completed = OperationResult.Ok($"Restore completed. {repairSummary} {remapResult.Message}".Trim());
+        completed.Warnings.AddRange(warnings);
+        progress?.Report(completed.Message);
+        return completed;
     }
 
     public Task<OperationResult> RestoreAsync(

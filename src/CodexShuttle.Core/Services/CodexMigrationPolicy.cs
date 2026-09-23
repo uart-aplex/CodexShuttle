@@ -58,6 +58,7 @@ public static class CodexMigrationPolicy
         "session_index.jsonl",
         ".codex-global-state.json",
         ".codex-global-state.json.bak",
+        ".app-server-state-reconciled-v1",
         "state_5.sqlite",
         "state_5.sqlite-shm",
         "state_5.sqlite-wal",

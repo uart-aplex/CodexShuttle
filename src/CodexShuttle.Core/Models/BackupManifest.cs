@@ -4,7 +4,7 @@ public sealed class BackupManifest
 {
     public int SchemaVersion { get; set; } = 2;
     public string AppName { get; set; } = "Codex Shuttle";
-    public string AppVersion { get; set; } = "0.2.6";
+    public string AppVersion { get; set; } = "0.2.7";
     public DateTimeOffset CreatedAt { get; set; }
     public string SourceComputer { get; set; } = string.Empty;
     public string SourceUser { get; set; } = string.Empty;

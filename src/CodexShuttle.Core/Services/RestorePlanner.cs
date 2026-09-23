@@ -150,5 +150,30 @@ public sealed class RestorePlanner
                 RemapUserProfilePaths = true
             });
         }
+
+        // Desktop can import this index at startup, so its paths must be restored
+        // and repaired alongside the primary index, including committed WAL data.
+        var legacyRoot = Path.Combine(codexSource, "sqlite");
+        if (Directory.Exists(legacyRoot))
+        {
+            foreach (var database in Directory.EnumerateFiles(legacyRoot, "state_*.sqlite"))
+            {
+                foreach (var suffix in new[] { "", "-wal", "-shm" })
+                {
+                    var source = database + suffix;
+                    if (!File.Exists(source)) continue;
+                    var target = Path.Combine(codexTarget, "sqlite", Path.GetFileName(source));
+                    _pathSafety.ValidateMirrorPair(source, target, sourceIsDirectory: false);
+                    plan.Add(new MirrorPlanItem
+                    {
+                        Name = $"Codex legacy state: {Path.GetFileName(source)}",
+                        SourcePath = source,
+                        DestinationPath = target,
+                        IsDirectory = false,
+                        RemapUserProfilePaths = true
+                    });
+                }
+            }
+        }
     }
 }
