@@ -8,6 +8,30 @@ namespace CodexShuttle.Tests;
 public sealed class BackupRestoreIntegrationTests
 {
     [TestMethod]
+    public async Task FirstBackup_VerificationFails_DoesNotLeaveCompletionMarker()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "CodexShuttleTests", Guid.NewGuid().ToString("N"));
+        var source = Path.Combine(root, "source", ".codex");
+        var package = Path.Combine(root, "package");
+        Directory.CreateDirectory(Path.Combine(source, "sessions"));
+        File.WriteAllText(Path.Combine(source, "sessions", "test.jsonl"), "{}");
+        try
+        {
+            var backup = new BackupService(new CodexDetector([], source), new CodexInspector(),
+                new FileMirrorService(), new ManifestService(), new ReportService());
+            var result = await backup.CreateBackupAsync(package, false, progress: new InlineProgress(message =>
+            {
+                if (message == "Verifying this backup from disk before committing...")
+                    File.WriteAllText(Path.Combine(package, ".codex", "sessions", "test.jsonl"), "corrupted");
+            }));
+            Assert.IsFalse(result.Success);
+            StringAssert.Contains(result.Message, "no complete backup is available");
+            Assert.IsFalse(File.Exists(Path.Combine(package, BackupService.CompleteMarkerFileName)));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
     public async Task BackupThenHistoryAndToolsRestore_MigratesHistoryAndToolsButPreservesCredentialsAndConfig()
     {
         var root = Path.Combine(Path.GetTempPath(), "CodexShuttleTests", Guid.NewGuid().ToString("N"));
@@ -54,6 +78,44 @@ public sealed class BackupRestoreIntegrationTests
             Assert.AreEqual("{\"updated\":true}", File.ReadAllText(Path.Combine(package, ".codex", "sessions", "session.jsonl")));
             Assert.IsFalse(Directory.Exists(package + ".rollback"));
 
+            var previousMarker = File.ReadAllText(Path.Combine(package, BackupService.CompleteMarkerFileName));
+            var previousManifest = await manifest.LoadAsync(Path.Combine(package, "manifest.json"));
+            Assert.IsFalse(string.IsNullOrWhiteSpace(previousManifest!.BackupRunId));
+            await Assert.ThrowsExceptionAsync<InvalidDataException>(() =>
+                new BackupCompletionVerifier().VerifyAsync(package, Guid.NewGuid().ToString("N")));
+
+            File.WriteAllText(Path.Combine(sourceCodex, "sessions", "new-session.jsonl"), "{}");
+            var failedUpdate = await backup.CreateBackupAsync(package, false, progress: new InlineProgress(message =>
+            {
+                if (message == "Verifying this backup from disk before committing...")
+                    File.WriteAllText(Path.Combine(package, ".codex", "sessions", "new-session.jsonl"), "corrupted");
+            }));
+            Assert.IsFalse(failedUpdate.Success);
+            StringAssert.Contains(failedUpdate.Message, "no new backup was saved");
+            StringAssert.Contains(failedUpdate.Message, "Previous backup retained:");
+            Assert.AreEqual(previousMarker, File.ReadAllText(Path.Combine(package, BackupService.CompleteMarkerFileName)));
+            Assert.IsFalse(File.Exists(Path.Combine(package, ".codex", "sessions", "new-session.jsonl")));
+            await new BackupCompletionVerifier().VerifyAsync(package, previousManifest.BackupRunId);
+            Assert.IsFalse(File.Exists(Path.Combine(package, BackupService.InProgressMarkerFileName)));
+
+            using var cancel = new CancellationTokenSource();
+            var canceledUpdate = await backup.CreateBackupAsync(package, false, cancel.Token, new InlineProgress(message =>
+            {
+                if (message == "Verifying this backup from disk before committing...") cancel.Cancel();
+            }));
+            Assert.IsFalse(canceledUpdate.Success);
+            StringAssert.Contains(canceledUpdate.Message, "Backup canceled");
+            await new BackupCompletionVerifier().VerifyAsync(package, previousManifest.BackupRunId);
+
+            var failedCommit = await backup.CreateBackupAsync(package, false, progress: new InlineProgress(message =>
+            {
+                if (message == "Committing verified backup...")
+                    Directory.CreateDirectory(Path.Combine(package + ".rollback", "committed.marker"));
+            }));
+            Assert.IsFalse(failedCommit.Success, "A written completion marker must not hide a commit failure.");
+            StringAssert.Contains(failedCommit.Message, "Previous backup retained:");
+            await new BackupCompletionVerifier().VerifyAsync(package, previousManifest.BackupRunId);
+
             var loadedManifest = await manifest.LoadAsync(Path.Combine(package, "manifest.json"));
             Assert.IsNotNull(loadedManifest);
             var restore = new RestoreService(mirror, manifest, new RestorePathResolver(targetCodex));
@@ -92,5 +154,10 @@ public sealed class BackupRestoreIntegrationTests
         using var command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE state (id INTEGER PRIMARY KEY, value TEXT); INSERT INTO state(value) VALUES ('ok');";
         command.ExecuteNonQuery();
+    }
+
+    private sealed class InlineProgress(Action<string> report) : IProgress<string>
+    {
+        public void Report(string value) => report(value);
     }
 }

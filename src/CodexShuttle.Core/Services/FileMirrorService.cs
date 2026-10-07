@@ -106,7 +106,7 @@ public sealed class FileMirrorService
         var output = string.Join(Environment.NewLine, outputLines);
         var error = string.Join(Environment.NewLine, errorLines);
 
-        if (process.ExitCode >= 8)
+        if (process.ExitCode < 0 || process.ExitCode >= 8)
         {
             var diagnostics = BuildFailureDiagnostics(process.ExitCode, outputLines, errorLines);
             progress?.Report(diagnostics[0]);
@@ -118,7 +118,7 @@ public sealed class FileMirrorService
             return OperationResult.Fail(diagnostics[0], diagnostics.Skip(1).ToArray());
         }
 
-        var result = OperationResult.Ok($"Robocopy completed with exit code {process.ExitCode}.");
+        var result = OperationResult.Ok($"Folder copy step finished (exit code {process.ExitCode}); overall operation is not yet verified.");
         progress?.Report(result.Message);
         if (!string.IsNullOrWhiteSpace(error))
         {

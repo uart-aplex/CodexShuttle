@@ -100,11 +100,19 @@ public sealed class BackupTransactionService
             return;
         }
 
-        await File.WriteAllTextAsync(
-            Path.Combine(transactionRoot, CommittedMarkerFileName),
-            $"CommittedAt={DateTimeOffset.Now:O}");
+        var markerPath = Path.Combine(transactionRoot, CommittedMarkerFileName);
+        var tempPath = markerPath + ".tmp";
+        await File.WriteAllTextAsync(tempPath, $"CommittedAt={DateTimeOffset.Now:O}");
+        using (var stream = new FileStream(tempPath, FileMode.Open, FileAccess.Write, FileShare.None))
+        {
+            stream.Flush(flushToDisk: true);
+        }
+        File.Move(tempPath, markerPath, overwrite: true);
         DeleteTransactionDirectory(transactionRoot);
     }
+
+    public bool IsCommitted(string backupRoot) =>
+        File.Exists(Path.Combine(GetTransactionRoot(backupRoot), CommittedMarkerFileName));
 
     public async Task RecoverAsync(
         string backupRoot,

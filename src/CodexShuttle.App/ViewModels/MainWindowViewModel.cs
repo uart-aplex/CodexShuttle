@@ -44,6 +44,14 @@ public sealed class MainWindowViewModel : ViewModelBase
     private bool _isRestoreRunning;
     private string _backupProgressStatus = "Idle.";
     private string _restoreProgressStatus = "Idle.";
+    private string _backupResult = "No backup run in this session.";
+    public string BackupResult { get => _backupResult; private set => SetProperty(ref _backupResult, value); }
+    private string _restoreResult = "No restore run in this session.";
+    public string RestoreResult { get => _restoreResult; private set => SetProperty(ref _restoreResult, value); }
+    private string _backupResultBrush = "#444444";
+    public string BackupResultBrush { get => _backupResultBrush; private set => SetProperty(ref _backupResultBrush, value); }
+    private string _restoreResultBrush = "#444444";
+    public string RestoreResultBrush { get => _restoreResultBrush; private set => SetProperty(ref _restoreResultBrush, value); }
     private PathStatusViewModel? _selectedWorkspace;
 
     public MainWindowViewModel()
@@ -78,6 +86,17 @@ public sealed class MainWindowViewModel : ViewModelBase
         RestoreCommand = new RelayCommand(RestoreAsync, () => !string.IsNullOrWhiteSpace(RestorePackage) && HasCurrentDryRun && !IsAnyOperationRunning);
         CancelRestoreCommand = new RelayCommand(CancelRestoreAsync, () => IsRestoreRunning);
         RepairConversationPathsCommand = new RelayCommand(RepairConversationPathsAsync, () => !IsAnyOperationRunning);
+        OpenLogsCommand = new RelayCommand(() =>
+        {
+            try
+            {
+                var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexShuttle", "logs");
+                Directory.CreateDirectory(path);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+            }
+            catch (Exception ex) { OperationStatus = $"Could not open logs: {ex.Message}"; }
+            return Task.CompletedTask;
+        });
 
         _ = RefreshAsync();
         if (!string.IsNullOrWhiteSpace(_restorePackage))
@@ -99,6 +118,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public RelayCommand RestoreCommand { get; }
     public RelayCommand CancelRestoreCommand { get; }
     public RelayCommand RepairConversationPathsCommand { get; }
+    public RelayCommand OpenLogsCommand { get; }
     public ObservableCollection<PathStatusViewModel> Workspaces { get; } = new();
     public ObservableCollection<PathStatusViewModel> AppDataPaths { get; } = new();
     public ObservableCollection<string> Warnings { get; } = new();
@@ -481,17 +501,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         OperationStatus = "Creating backup...";
+        BackupResult = "Backup in progress. Not yet safe to restore.";
+        BackupResultBrush = "#735A10";
         IsBackupRunning = true;
         _backupCancellation = new CancellationTokenSource();
         BackupLog.Clear();
-        AddBackupLog($"Backup destination: {BackupDestination}");
-
-        var progress = new Progress<string>(message =>
+        using var progress = CreateJournal("backup", message =>
         {
             BackupProgressStatus = message;
             OperationStatus = message;
             AddBackupLog(message);
         });
+        progress.Report($"Codex Shuttle {typeof(MainWindowViewModel).Assembly.GetName().Version}; backup destination: {BackupDestination}");
 
         var service = new BackupService(_detector, _inspector, _fileMirrorService, _manifestService, _reportService);
         try
@@ -505,7 +526,11 @@ public sealed class MainWindowViewModel : ViewModelBase
                     cancellationToken: cancellationToken,
                     progress: progress),
                 cancellationToken);
-            OperationStatus = result.Success ? $"Backup created: {BackupDestination}" : result.Message;
+            foreach (var error in result.Errors) progress.Report($"Detail: {error}");
+            foreach (var warning in result.Warnings) progress.Report($"Warning: {warning}");
+            progress.Finish(result.Message);
+            OperationStatus = result.Message;
+            BackupResultBrush = result.Success ? "#166534" : "#B42318";
             BackupProgressStatus = OperationStatus;
             AddBackupLog(OperationStatus);
             if (!result.Success)
@@ -524,18 +549,25 @@ public sealed class MainWindowViewModel : ViewModelBase
         catch (OperationCanceledException)
         {
             OperationStatus = "Backup canceled.";
+            BackupResultBrush = "#B42318";
+            progress.Finish(OperationStatus);
             BackupProgressStatus = OperationStatus;
             AddBackupLog(OperationStatus);
         }
         catch (Exception ex)
         {
             OperationStatus = $"Backup failed: {ex.Message}";
+            BackupResultBrush = "#B42318";
+            progress.Finish(OperationStatus);
             BackupProgressStatus = OperationStatus;
             AddBackupLog(OperationStatus);
             AddBackupLog("Please check that the destination drive exists and is writable.");
         }
         finally
         {
+            BackupResult = BackupProgressStatus;
+            AddBackupLog(progress.Error is null ? $"Full log: {progress.FilePath}" : $"Log could not be saved: {progress.Error}");
+            if (progress.Error is not null) BackupResult += $" Log warning: {progress.Error}";
             _backupCancellation?.Dispose();
             _backupCancellation = null;
             IsBackupRunning = false;
@@ -641,7 +673,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         var answer = System.Windows.MessageBox.Show(
-            $"Restore mode: {SelectedMigrationMode}\n\n{DryRunSummary}\n\nMirror restore can overwrite files and delete destination-only files. Embedded Windows user-profile paths are mapped to this account; fixed workspace paths are unchanged. Credentials are not migrated. Continue?",
+            $"Backup: {RestorePackageInfo}\n\nRestore mode: {SelectedMigrationMode}\n\n{DryRunSummary}\n\nMirror restore can overwrite files and delete destination-only files. Embedded Windows user-profile paths are mapped to this account; fixed workspace paths are unchanged. Credentials are not migrated. Continue?",
             "Confirm Restore",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -660,6 +692,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         OperationStatus = "Restoring...";
+        RestoreResult = "Restore in progress.";
+        RestoreResultBrush = "#735A10";
         RestoreProgressStatus = "Starting restore...";
         IsRestoreRunning = true;
         _restoreCancellation = new CancellationTokenSource();
@@ -667,12 +701,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         AddRestoreLog($"Codex Shuttle {typeof(MainWindowViewModel).Assembly.GetName().Version}; restore to {new RestorePathResolver(_settings.CodexHomeOverride).GetCurrentCodexHome()}");
         var pathResolver = new RestorePathResolver(_settings.CodexHomeOverride);
         var service = new RestoreService(_fileMirrorService, _manifestService, pathResolver);
-        var progress = new Progress<string>(message =>
+        using var progress = CreateJournal("restore", message =>
         {
             OperationStatus = message;
             RestoreProgressStatus = message;
             AddRestoreLog(message);
         });
+        progress.Report($"Codex Shuttle {typeof(MainWindowViewModel).Assembly.GetName().Version}; restore package: {RestorePackage}; target: {pathResolver.GetCurrentCodexHome()}");
         try
         {
             var restorePackage = RestorePackage;
@@ -685,8 +720,12 @@ public sealed class MainWindowViewModel : ViewModelBase
                     cancellationToken: cancellationToken,
                     progress: progress),
                 cancellationToken);
+            foreach (var error in result.Errors) progress.Report($"Detail: {error}");
+            foreach (var warning in result.Warnings) progress.Report($"Warning: {warning}");
+            progress.Finish(result.Message);
             OperationStatus = result.Message;
             RestoreProgressStatus = OperationStatus;
+            RestoreResultBrush = result.Success ? "#166534" : "#B42318";
             AddRestoreLog(OperationStatus);
             foreach (var detail in result.Errors)
             {
@@ -700,17 +739,23 @@ public sealed class MainWindowViewModel : ViewModelBase
         catch (OperationCanceledException)
         {
             OperationStatus = "Restore canceled.";
+            progress.Finish(OperationStatus);
+            RestoreResultBrush = "#B42318";
             RestoreProgressStatus = OperationStatus;
             AddRestoreLog(OperationStatus);
         }
         catch (Exception ex)
         {
             OperationStatus = $"Restore failed: {ex.Message}";
+            RestoreResultBrush = "#B42318";
+            progress.Finish(OperationStatus);
             RestoreProgressStatus = OperationStatus;
             AddRestoreLog(OperationStatus);
         }
         finally
         {
+            RestoreResult = RestoreProgressStatus;
+            AddRestoreLog(progress.Error is null ? $"Full log: {progress.FilePath}" : $"Log could not be saved: {progress.Error}");
             SaveRestoreLog();
             _restoreCancellation?.Dispose();
             _restoreCancellation = null;
@@ -740,21 +785,28 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         var codexHome = new RestorePathResolver(_settings.CodexHomeOverride).GetCurrentCodexHome();
+        RestoreResult = "Conversation path repair in progress.";
+        RestoreResultBrush = "#735A10";
         IsRestoreRunning = true;
         _restoreCancellation = new CancellationTokenSource();
         RestoreLog.Clear();
         AddRestoreLog($"Codex Shuttle {typeof(MainWindowViewModel).Assembly.GetName().Version}; repair conversation paths in {codexHome}");
-        var progress = new Progress<string>(message =>
+        using var progress = CreateJournal("repair", message =>
         {
             RestoreProgressStatus = message;
             AddRestoreLog(message);
         });
+        progress.Report($"Codex Shuttle {typeof(MainWindowViewModel).Assembly.GetName().Version}; repair paths in {codexHome}");
         try
         {
             var token = _restoreCancellation.Token;
             var result = await Task.Run(() => new RolloutPathService().CheckAsync(codexHome, true, token, progress), token);
+            foreach (var error in result.Errors) progress.Report($"Detail: {error}");
+            foreach (var warning in result.Warnings) progress.Report($"Warning: {warning}");
+            progress.Finish(result.Message);
             OperationStatus = result.Message;
             RestoreProgressStatus = result.Message;
+            RestoreResultBrush = result.Success ? "#166534" : "#B42318";
             AddRestoreLog(result.Message);
             foreach (var error in result.Errors) AddRestoreLog($"Detail: {error}");
             foreach (var warning in result.Warnings) AddRestoreLog($"Warning: {warning}");
@@ -762,15 +814,21 @@ public sealed class MainWindowViewModel : ViewModelBase
         catch (OperationCanceledException)
         {
             OperationStatus = "Conversation path repair canceled.";
+            RestoreResultBrush = "#B42318";
+            progress.Finish(OperationStatus);
             AddRestoreLog(OperationStatus);
         }
         catch (Exception ex)
         {
             OperationStatus = $"Conversation path repair failed: {ex.Message}";
+            RestoreResultBrush = "#B42318";
+            progress.Finish(OperationStatus);
             AddRestoreLog(OperationStatus);
         }
         finally
         {
+            RestoreResult = OperationStatus;
+            AddRestoreLog(progress.Error is null ? $"Full log: {progress.FilePath}" : $"Log could not be saved: {progress.Error}");
             SaveRestoreLog();
             _restoreCancellation.Dispose();
             _restoreCancellation = null;
@@ -793,6 +851,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             AddRestoreLog($"Could not save restore report: {ex.Message}");
         }
     }
+
+    private static OperationJournal CreateJournal(string operation, Action<string> display) =>
+        new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodexShuttle", "logs"),
+            operation, action => System.Windows.Application.Current.Dispatcher.BeginInvoke(action), display);
 
     private void ApplyInspection(CodexInspectionResult inspection)
     {

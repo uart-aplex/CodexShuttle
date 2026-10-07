@@ -4,7 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="Codex Shuttle" Height="720" Width="1080" MinHeight="620" MinWidth="900">
+        Title="Codex Shuttle" Height="680" Width="1180" MinHeight="480" MinWidth="760">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         <Style TargetType="TextBlock">
@@ -17,19 +17,39 @@
         <Style TargetType="TextBox">
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsAnyOperationRunning}" Value="True"><Setter Property="IsEnabled" Value="False" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsAnyOperationRunning}" Value="True"><Setter Property="IsEnabled" Value="False" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="LogList" TargetType="ListBox">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+            <Setter Property="ItemTemplate">
+                <Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Padding="2,3" /></DataTemplate></Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
 
     <DockPanel Background="#F7F7F4">
-        <Border DockPanel.Dock="Top" Background="#202124" Padding="24,18">
+        <Border DockPanel.Dock="Top" Background="#202124" Padding="16,10">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="Codex Shuttle" Foreground="White" FontSize="28" FontWeight="SemiBold" />
-                    <TextBlock Text="Backup and transfer helper for local Codex Desktop workspaces" Foreground="#D7DAD6" Margin="0,4,0,0" />
+                    <TextBlock Text="Codex Shuttle" Foreground="White" FontSize="22" FontWeight="SemiBold" />
                 </StackPanel>
                 <Button Grid.Column="1" Content="Refresh" Command="{Binding RefreshCommand}" VerticalAlignment="Center" />
             </Grid>
@@ -37,7 +57,7 @@
 
         <StatusBar DockPanel.Dock="Bottom" Background="#EFEFEB">
             <StatusBarItem>
-                <TextBlock Text="{Binding OperationStatus}" />
+                <TextBlock Text="{Binding OperationStatus}" TextTrimming="CharacterEllipsis" ToolTip="{Binding OperationStatus}" />
             </StatusBarItem>
         </StatusBar>
 
@@ -52,17 +72,18 @@
                 <TextBlock Text="Scanning files..." FontWeight="SemiBold" Margin="0,0,14,0" />
                 <ProgressBar Grid.Column="1" IsIndeterminate="True" Height="10" VerticalAlignment="Center" />
                 <TextBlock Grid.Column="2" Text="Large workspaces may take a moment. You can keep the app open while it checks file counts and sizes."
-                           Margin="14,0,0,0" Foreground="#5F4A12" />
+                           Margin="14,0,0,0" Foreground="#5F4A12" TextWrapping="Wrap" />
             </Grid>
         </Border>
 
-        <TabControl Margin="18" Background="Transparent">
+        <TabControl x:Name="MainTabs" Margin="10" Background="Transparent">
             <TabItem Header="Inspect">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid Margin="12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <Border Background="White" BorderBrush="#DDDDD8" BorderThickness="1" Padding="16" CornerRadius="6">
@@ -109,6 +130,7 @@
 
                     <TextBlock Grid.Row="1" Text="Detected Workspaces" FontSize="18" FontWeight="SemiBold" Margin="0,18,0,8" />
                     <DataGrid Grid.Row="2" ItemsSource="{Binding Workspaces}" AutoGenerateColumns="False" IsReadOnly="True"
+                              MinHeight="100" MaxHeight="320"
                               CanUserAddRows="False" HeadersVisibility="Column" Background="White" BorderBrush="#DDDDD8">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="130" />
@@ -120,17 +142,18 @@
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
+                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="Backup">
-                <Grid Margin="12">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="2*" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="310" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="1.15*" MinWidth="280" />
+                    </Grid.ColumnDefinitions>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,6,0">
+                    <StackPanel>
 
                     <Border Background="White" BorderBrush="#DDDDD8" BorderThickness="1" Padding="16" CornerRadius="6">
                         <StackPanel>
@@ -143,11 +166,11 @@
                                 <TextBox Text="{Binding BackupDestination, UpdateSourceTrigger=PropertyChanged}" />
                                 <Button Grid.Column="1" Content="Browse..." Command="{Binding BrowseBackupDestinationCommand}" Margin="8,0,0,0" />
                             </Grid>
-                            <StackPanel Orientation="Horizontal">
+                            <WrapPanel>
                                 <Button Content="Create Backup" Command="{Binding CreateBackupCommand}" />
                                 <Button Content="Cancel Backup" Command="{Binding CancelBackupCommand}"
                                         Visibility="{Binding IsBackupRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                            </StackPanel>
+                            </WrapPanel>
                             <Border Background="#EAF4FF" BorderBrush="#9CC7EC" BorderThickness="1" Padding="12" Margin="0,14,0,0" CornerRadius="4"
                                     Visibility="{Binding IsBackupRunning, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <StackPanel>
@@ -156,50 +179,51 @@
                                     <TextBlock Text="{Binding BackupProgressStatus}" TextWrapping="Wrap" Foreground="#24435E" />
                                 </StackPanel>
                             </Border>
-                            <TextBlock Text="AppData backup is kept off in this first UI pass. The core service already supports optional AppData packaging."
-                                       Foreground="#666" Margin="0,8,0,0" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
 
-                    <Grid Grid.Row="1" Margin="0,18,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,18,0,8">
                         <TextBlock Text="Included Workspaces" FontSize="18" FontWeight="SemiBold" />
-                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <WrapPanel Margin="0,8,0,0">
                             <Button Content="Add Folder..." Command="{Binding AddWorkspaceCommand}" />
                             <Button Content="Remove" Command="{Binding RemoveWorkspaceCommand}" Margin="0" />
-                        </StackPanel>
-                    </Grid>
-                    <DataGrid Grid.Row="2" ItemsSource="{Binding Workspaces}" SelectedItem="{Binding SelectedWorkspace}"
+                        </WrapPanel>
+                    </StackPanel>
+                    <DataGrid ItemsSource="{Binding Workspaces}" SelectedItem="{Binding SelectedWorkspace}" MinHeight="100" MaxHeight="300"
                               AutoGenerateColumns="False" IsReadOnly="True"
                               CanUserAddRows="False" HeadersVisibility="Column" Background="White" BorderBrush="#DDDDD8">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*" />
-                            <DataGridTextColumn Header="Exists" Binding="{Binding Exists}" Width="90" />
-                            <DataGridTextColumn Header="Files" Binding="{Binding FileCount}" Width="110" />
-                            <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="110" />
+                            <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*" MinWidth="140" />
+                            <DataGridTextColumn Header="Exists" Binding="{Binding Exists}" Width="55" />
+                            <DataGridTextColumn Header="Files" Binding="{Binding FileCount}" Width="75" />
+                            <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="80" />
                         </DataGrid.Columns>
                     </DataGrid>
 
-                    <TextBlock Grid.Row="3" Text="Backup Log" FontSize="18" FontWeight="SemiBold" Margin="0,18,0,8" />
-                    <Border Grid.Row="4" Background="White" BorderBrush="#DDDDD8" BorderThickness="1" CornerRadius="6">
-                        <ListBox ItemsSource="{Binding BackupLog}" BorderThickness="0" FontFamily="Consolas" FontSize="12"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                    </Border>
+                    </StackPanel>
+                    </ScrollViewer>
+                    <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="#D7DADD" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ToolTip="Resize settings and log" />
+                    <DockPanel Grid.Column="2">
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                            <Button DockPanel.Dock="Right" Content="Open Logs" Command="{Binding OpenLogsCommand}" Margin="8,0,0,0" Padding="8,4" />
+                            <TextBlock Text="Backup Log" FontSize="18" FontWeight="SemiBold" />
+                        </DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding BackupResult}" Foreground="{Binding BackupResultBrush}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <CheckBox x:Name="BackupFollow" DockPanel.Dock="Bottom" Content="Auto-scroll" IsChecked="True" Margin="0,8,0,0" />
+                        <ListBox x:Name="BackupLogList" ItemsSource="{Binding BackupLog}" Style="{StaticResource LogList}" />
+                    </DockPanel>
                 </Grid>
             </TabItem>
 
             <TabItem Header="Restore">
-                <Grid Margin="12">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="2*" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="310" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="1.15*" MinWidth="280" />
+                    </Grid.ColumnDefinitions>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,6,0">
+                    <StackPanel>
 
                     <Border Background="White" BorderBrush="#DDDDD8" BorderThickness="1" Padding="16" CornerRadius="6">
                         <StackPanel>
@@ -215,25 +239,20 @@
                                 <Button Grid.Column="2" Content="Load" Command="{Binding LoadRestorePackageCommand}" Margin="0" />
                             </Grid>
                             <TextBlock Text="{Binding RestorePackageInfo}" Foreground="#555" TextWrapping="Wrap" Margin="0,0,0,10" />
-                            <Grid Margin="0,0,0,12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="180" />
-                                    <ColumnDefinition Width="280" />
-                                    <ColumnDefinition />
-                                </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,0,12">
                                 <TextBlock Text="Migration mode" FontWeight="SemiBold" />
-                                <ComboBox Grid.Column="1" ItemsSource="{Binding MigrationModes}" SelectedItem="{Binding SelectedMigrationMode}"
+                                <ComboBox ItemsSource="{Binding MigrationModes}" SelectedItem="{Binding SelectedMigrationMode}"
                                           Padding="8,5" />
-                                <TextBlock Grid.Column="2" Margin="12,0,0,0" Foreground="#555" TextWrapping="Wrap"
+                                <TextBlock Margin="0,6,0,0" Foreground="#555" TextWrapping="Wrap"
                                            Text="HistoryAndTools preserves this PC's login/provider settings. FullProfile also migrates Codex configuration; credentials remain excluded." />
-                            </Grid>
-                            <StackPanel Orientation="Horizontal">
+                            </StackPanel>
+                            <WrapPanel>
                                 <Button Content="Dry Run" Command="{Binding DryRunCommand}" />
                                 <Button Content="Restore" Command="{Binding RestoreCommand}" />
                                 <Button Content="Repair Conversation Paths" Command="{Binding RepairConversationPathsCommand}" />
                                 <Button Content="Cancel Restore" Command="{Binding CancelRestoreCommand}"
                                         Visibility="{Binding IsRestoreRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                            </StackPanel>
+                            </WrapPanel>
                             <Border Background="#FFF5D6" BorderBrush="#E3BE55" BorderThickness="1" Padding="12" Margin="0,14,0,0" CornerRadius="4">
                                 <StackPanel>
                                     <TextBlock Text="{Binding DryRunSummary}" FontWeight="SemiBold" TextWrapping="Wrap" />
@@ -252,12 +271,12 @@
                         </StackPanel>
                     </Border>
 
-                    <StackPanel Grid.Row="1" Margin="0,18,0,8">
-                        <TextBlock Text="Fixed Workspace Restore Paths" FontSize="18" FontWeight="SemiBold" />
+                    <StackPanel Margin="0,18,0,8">
+                        <TextBlock Text="Fixed Workspace Restore Paths" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
                         <TextBlock Text="Workspaces are always restored to their original absolute paths so file links stored in Codex conversations remain valid."
                                    Foreground="#555" Margin="0,4,0,0" TextWrapping="Wrap" />
                     </StackPanel>
-                    <DataGrid Grid.Row="2" ItemsSource="{Binding RestoreTargets}" AutoGenerateColumns="False" IsReadOnly="True"
+                    <DataGrid ItemsSource="{Binding RestoreTargets}" AutoGenerateColumns="False" IsReadOnly="True" MinHeight="100" MaxHeight="300"
                               CanUserAddRows="False" HeadersVisibility="Column" Background="White" BorderBrush="#DDDDD8">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Backup source" Binding="{Binding SourcePath}" Width="1.2*" />
@@ -265,11 +284,18 @@
                         </DataGrid.Columns>
                     </DataGrid>
 
-                    <TextBlock Grid.Row="3" Text="Restore Log" FontSize="18" FontWeight="SemiBold" Margin="0,18,0,8" />
-                    <Border Grid.Row="4" Background="White" BorderBrush="#DDDDD8" BorderThickness="1" CornerRadius="6">
-                        <ListBox ItemsSource="{Binding RestoreLog}" BorderThickness="0" FontFamily="Consolas" FontSize="12"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                    </Border>
+                    </StackPanel>
+                    </ScrollViewer>
+                    <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="#D7DADD" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ToolTip="Resize settings and log" />
+                    <DockPanel Grid.Column="2">
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                            <Button DockPanel.Dock="Right" Content="Open Logs" Command="{Binding OpenLogsCommand}" Margin="8,0,0,0" Padding="8,4" />
+                            <TextBlock Text="Restore Log" FontSize="18" FontWeight="SemiBold" />
+                        </DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding RestoreResult}" Foreground="{Binding RestoreResultBrush}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <CheckBox x:Name="RestoreFollow" DockPanel.Dock="Bottom" Content="Auto-scroll" IsChecked="True" Margin="0,8,0,0" />
+                        <ListBox x:Name="RestoreLogList" ItemsSource="{Binding RestoreLog}" Style="{StaticResource LogList}" />
+                    </DockPanel>
                 </Grid>
             </TabItem>
         </TabControl>

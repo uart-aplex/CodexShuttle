@@ -48,6 +48,8 @@ public sealed class BackupService
         var detection = _detector.Detect();
         var inspection = _inspector.Inspect(detection.CodexHome);
         var manifest = _manifestService.CreateManifest(detection, inspection, backupRoot, includeAppData);
+        manifest.BackupRunId = Guid.NewGuid().ToString("N");
+        progress?.Report($"Backup run: {manifest.BackupRunId}; started {manifest.CreatedAt:yyyy-MM-dd HH:mm:ss zzz}");
 
         IReadOnlyList<BackupDataSet> dataSets;
         try
@@ -65,12 +67,13 @@ public sealed class BackupService
 
         var inProgressMarker = Path.Combine(backupRoot, InProgressMarkerFileName);
         var completeMarker = Path.Combine(backupRoot, CompleteMarkerFileName);
+        var hadPreviousBackup = File.Exists(completeMarker);
         await File.WriteAllTextAsync(inProgressMarker, $"StartedAt={DateTimeOffset.Now:O}", cancellationToken);
-        var completionMarkerWritten = false;
+        var committed = false;
 
         try
         {
-            var protectedFiles = new List<string> { "manifest.json", "backup-report.txt", manifest.ChecksumFile };
+            var protectedFiles = new List<string> { "manifest.json", "backup-report.txt", manifest.ChecksumFile, CompleteMarkerFileName };
             protectedFiles.AddRange(_sensitiveDataService
                 .FindSensitiveFiles(Path.Combine(backupRoot, manifest.CodexPackagePath))
                 .Select(path => Path.GetRelativePath(backupRoot, path)));
@@ -97,8 +100,8 @@ public sealed class BackupService
                     dataSet.MirrorOptions);
                 if (!copyResult.Success)
                 {
-                    await RollBackFailedBackupAsync(backupRoot, inProgressMarker, progress);
-                    return copyResult;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    throw new IOException(string.Join(Environment.NewLine, new[] { copyResult.Message }.Concat(copyResult.Errors)));
                 }
             }
 
@@ -112,8 +115,7 @@ public sealed class BackupService
                 var inspectionError = ValidateCopiedCodex(inspection, backupInspection);
                 if (inspectionError is not null)
                 {
-                    await RollBackFailedBackupAsync(backupRoot, inProgressMarker, progress);
-                    return OperationResult.Fail("Copied Codex state did not pass validation.", inspectionError);
+                    throw new InvalidDataException($"Copied Codex state did not pass validation: {inspectionError}");
                 }
 
                 manifest.CodexInspection = backupInspection;
@@ -144,39 +146,31 @@ public sealed class BackupService
                     await SHA256.HashDataAsync(checksumStream, cancellationToken)).ToLowerInvariant();
                 await File.WriteAllTextAsync(
                     completeMarker,
-                    $"CompletedAt={DateTimeOffset.Now:O}{Environment.NewLine}SchemaVersion={manifest.SchemaVersion}{Environment.NewLine}ChecksumFileSha256={checksumHash}",
+                    $"CompletedAt={DateTimeOffset.Now:O}{Environment.NewLine}BackupRunId={manifest.BackupRunId}{Environment.NewLine}SchemaVersion={manifest.SchemaVersion}{Environment.NewLine}ChecksumFileSha256={checksumHash}",
                     cancellationToken);
-                completionMarkerWritten = true;
             }
 
+            progress?.Report("Verifying this backup from disk before committing...");
+            await new BackupCompletionVerifier().VerifyAsync(backupRoot, manifest.BackupRunId, cancellationToken, progress);
+            progress?.Report("Committing verified backup...");
+            cancellationToken.ThrowIfCancellationRequested();
             await _transactionService.CommitAsync(backupRoot);
+            committed = true;
             File.Delete(inProgressMarker);
-            progress?.Report("Backup completed, verified and safe to restore.");
-            return OperationResult.Ok("Backup completed.");
-        }
-        catch (OperationCanceledException)
-        {
-            await RollBackFailedBackupAsync(backupRoot, inProgressMarker, progress);
-            throw;
+            return OperationResult.Ok($"Backup completed and verified: {manifest.CreatedAt:yyyy-MM-dd HH:mm:ss zzz}. Package: {backupRoot}. Run: {manifest.BackupRunId}");
         }
         catch (Exception ex)
         {
-            if (completionMarkerWritten)
+            // A written completion marker alone is not a committed transaction.
+            if (committed || _transactionService.IsCommitted(backupRoot))
             {
-                if (File.Exists(inProgressMarker))
-                {
-                    File.Delete(inProgressMarker);
-                }
-
-                progress?.Report("Backup completed and verified, but rollback cleanup will be retried next time.");
-                var completedResult = OperationResult.Ok("Backup completed with a cleanup warning.");
-                completedResult.Warnings.Add(ex.Message);
-                return completedResult;
+                return OperationResult.Fail("Backup data was committed, but final cleanup failed. Do not restore until cleanup is resolved.", ex.Message);
             }
 
             try
             {
                 await RollBackFailedBackupAsync(backupRoot, inProgressMarker, progress);
+                if (!hadPreviousBackup && File.Exists(completeMarker)) File.Delete(completeMarker);
             }
             catch (Exception rollbackException)
             {
@@ -186,7 +180,13 @@ public sealed class BackupService
                     rollbackException.Message);
             }
 
-            return OperationResult.Fail("Backup failed; the previous complete package was restored.", ex.Message);
+            var retained = hadPreviousBackup
+                ? await _manifestService.LoadAsync(Path.Combine(backupRoot, "manifest.json"), CancellationToken.None)
+                : null;
+            var outcome = ex is OperationCanceledException ? "Backup canceled" : "Backup failed";
+            return OperationResult.Fail(retained is not null
+                ? $"{outcome}; no new backup was saved. Previous backup retained: {retained.CreatedAt:yyyy-MM-dd HH:mm:ss zzz}."
+                : $"{outcome}; no complete backup is available. Do not restore this package.", ex.Message);
         }
     }
 

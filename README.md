@@ -17,6 +17,16 @@ It keeps a reusable differential package for moving conversations, workspaces, s
 - Generates SHA-256 checksums for Codex history and migration tools, then verifies them before restore.
 - Runs SQLite `quick_check` on copied Codex state.
 - Shows the current file, bounded logs, cancellation controls, and incomplete-package markers.
+- Verifies the current run ID, manifest, completion marker and Codex/tool checksums from disk before committing and reporting success. Workspace files still use differential mirror copying, not full content checksums.
+- Keeps backup/restore logs in resizable right-hand panes with wrapping and optional auto-scroll; settings scroll independently on small screens.
+
+## Operation Results And Logs
+
+Only the final **Backup completed and verified** result confirms a new backup. Individual folder-copy messages are intermediate steps. A failed or canceled update reports that no new backup was saved and identifies the retained backup's date. A cleanup failure is not reported as success.
+
+Progress cannot replace a final result after an operation ends. Each backup, restore and path-repair run writes a separate timestamped operation log under `%LOCALAPPDATA%\CodexShuttle\logs`; use **Open Logs** to find it. Logs are flushed as progress arrives, independent of the on-screen 300-line limit, and include reported errors, the app version and selected paths. They are not a raw transcript of every copied file. Logs may contain private paths; review them before sharing. Older schema-2 packages remain supported for restore.
+
+The backup completion marker participates in rollback along with the manifest and checksum list. Verification or commit failures must restore all of these together so a new marker cannot label an old package as current.
 
 ## Migration Modes
 
