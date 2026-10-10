@@ -21,6 +21,18 @@ $window.DataContext = [pscustomobject]@{
     SelectedMigrationMode = 'FullProfile'
     BackupLog = $log
     RestoreLog = $log
+    Merge = [pscustomobject]@{
+        Package = 'L:\CodexTransfer\CodexShuttle-Current'
+        ProfileRoot = 'C:\Users\HomeUser\.codex'
+        Status = '3 additions, 2 identical, 1 conflict, 0 blocked. Selected: 4. Source: OFFICE, 2026-10-10 09:02 +08:00.'
+        CanEdit = $true
+        IsBusy = $false
+        Log = $log
+        Sessions = @([pscustomobject]@{Selected=$false; Entry=[pscustomobject]@{Title='Example project';Action='Conflict';Id='11111111-1111-1111-1111-111111111111';TargetPath='C:\Users\HomeUser\AppData\Local\CodexShuttle\merge\conflicts\example.jsonl';Reason='Same ID, different contents'}})
+        Mappings = @()
+        Conflicts = @()
+        Points = @()
+    }
     IsScanning = $false
     IsBackupRunning = $false
     IsRestoreRunning = $false
@@ -38,12 +50,12 @@ $content.Resources = $window.Resources
 $window.Content = $null
 [void][IO.Directory]::CreateDirectory($OutputDirectory)
 foreach ($size in @(@(760,440), @(800,560), @(1024,680), @(1366,720))) {
-    foreach ($tabIndex in @(1,2)) {
+    foreach ($tabIndex in @(1,2,3,5)) {
         $tabs.SelectedIndex = $tabIndex
         $content.Measure([Windows.Size]::new($size[0], $size[1]))
         $content.Arrange([Windows.Rect]::new(0,0,$size[0],$size[1]))
         $content.UpdateLayout()
-        $list = if ($tabIndex -eq 1) { $backupLog } else { $restoreLog }
+        $list = switch ($tabIndex) { 1 { $backupLog } 2 { $restoreLog } 3 { $window.FindName('MergeLogList') } 5 { $window.FindName('MergeRecoveryLogList') } }
         if ($list.ActualHeight -lt ($size[1] * 0.45) -or $list.ActualWidth -lt 280) {
             throw "Log area too small: $($list.ActualWidth) x $($list.ActualHeight)"
         }

@@ -215,7 +215,7 @@
                 </Grid>
             </TabItem>
 
-            <TabItem Header="Restore">
+            <TabItem Header="Disaster Recovery">
                 <Grid Margin="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" MinWidth="310" />
@@ -295,6 +295,86 @@
                         <TextBlock DockPanel.Dock="Top" Text="{Binding RestoreResult}" Foreground="{Binding RestoreResultBrush}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,8" />
                         <CheckBox x:Name="RestoreFollow" DockPanel.Dock="Bottom" Content="Auto-scroll" IsChecked="True" Margin="0,8,0,0" />
                         <ListBox x:Name="RestoreLogList" ItemsSource="{Binding RestoreLog}" Style="{StaticResource LogList}" />
+                    </DockPanel>
+                </Grid>
+            </TabItem>
+            <TabItem Header="Merge Restore" DataContext="{Binding Merge}">
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="280" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" MinWidth="280" /></Grid.ColumnDefinitions>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel IsEnabled="{Binding CanEdit}">
+                            <TextBlock Text="Merge Restore (Preview)" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12" />
+                            <TextBlock Text="Backup package" />
+                            <DockPanel Margin="0,4,0,12"><Button DockPanel.Dock="Right" Content="Browse..." Command="{Binding BrowseCommand}" Margin="6,0,0,0" /><TextBox Text="{Binding Package, UpdateSourceTrigger=PropertyChanged}" /></DockPanel>
+                            <TextBlock Text="Destination Codex profile" />
+                            <TextBlock Text="{Binding ProfileRoot}" TextWrapping="Wrap" Margin="0,4,0,12" />
+                            <DockPanel Margin="0,0,0,6"><Button DockPanel.Dock="Right" Content="Add Mapping" Command="{Binding AddMappingCommand}" Margin="6,0,0,0" /><TextBlock Text="Workspace paths" FontWeight="SemiBold" /></DockPanel>
+                            <ItemsControl ItemsSource="{Binding Mappings}">
+                                <ItemsControl.ItemTemplate><DataTemplate><StackPanel Margin="0,0,0,8">
+                                    <DockPanel><Button DockPanel.Dock="Right" Content="Remove" Command="{Binding RemoveCommand}" Padding="6,2" Margin="0,0,0,4" /><TextBlock Text="Source workspace" /></DockPanel>
+                                    <TextBox Text="{Binding Source, UpdateSourceTrigger=PropertyChanged}" ToolTip="Source computer's workspace path" />
+                                    <TextBlock Text="Local workspace" Margin="0,4,0,0" />
+                                    <DockPanel Margin="0,4,0,0"><Button DockPanel.Dock="Right" Content="Browse..." Command="{Binding BrowseCommand}" Margin="6,0,0,0" /><TextBox Text="{Binding Target, UpdateSourceTrigger=PropertyChanged}" ToolTip="This computer's workspace path" /></DockPanel>
+                                </StackPanel></DataTemplate></ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <WrapPanel Margin="0,6,0,8"><Button Content="Dry Run" Command="{Binding PreviewCommand}" /><Button Content="Import Selected" Command="{Binding ApplyCommand}" /></WrapPanel>
+                            <CheckBox IsChecked="{Binding Acknowledged}" Margin="0,0,0,12"><TextBlock Text="I accept preview-version risk; Desktop GUI validation is pending." TextWrapping="Wrap" /></CheckBox>
+                            <TextBlock Text="Conversations" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <DataGrid ItemsSource="{Binding Sessions}" AutoGenerateColumns="False" CanUserAddRows="False" HeadersVisibility="Column" Height="250" HorizontalScrollBarVisibility="Auto">
+                                <DataGrid.Columns>
+                                    <DataGridCheckBoxColumn Header="Import" Binding="{Binding Selected, UpdateSourceTrigger=PropertyChanged}" Width="55" />
+                                    <DataGridTextColumn Header="Title" Binding="{Binding Entry.Title}" IsReadOnly="True" Width="160" />
+                                    <DataGridTextColumn Header="Action" Binding="{Binding Entry.Action}" IsReadOnly="True" Width="115" />
+                                    <DataGridTextColumn Header="Session ID" Binding="{Binding Entry.Id}" IsReadOnly="True" Width="250" />
+                                    <DataGridTextColumn Header="Affected path" Binding="{Binding Entry.TargetPath}" IsReadOnly="True" Width="300" />
+                                    <DataGridTextColumn Header="Reason" Binding="{Binding Entry.Reason}" IsReadOnly="True" Width="300" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="#D7DADD" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ToolTip="Resize preview and log" />
+                    <DockPanel Grid.Column="2">
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8"><Button DockPanel.Dock="Right" Content="Cancel" Command="{Binding CancelCommand}" Margin="8,0,0,0" /><TextBlock Text="Merge Log" FontSize="18" FontWeight="SemiBold" /></DockPanel>
+                        <ProgressBar DockPanel.Dock="Top" IsIndeterminate="True" Height="6" Margin="0,0,0,8" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <CheckBox x:Name="MergeFollow" DockPanel.Dock="Bottom" Content="Auto-scroll" IsChecked="True" Margin="0,8,0,0" />
+                        <ListBox x:Name="MergeLogList" ItemsSource="{Binding Log}" Style="{StaticResource LogList}" />
+                    </DockPanel>
+                </Grid>
+            </TabItem>
+            <TabItem Header="Conflict Review" DataContext="{Binding Merge}">
+                <DockPanel Margin="8">
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                    <TextBlock DockPanel.Dock="Bottom" Text="Local conversations remain unchanged. Retained revisions are not new Codex chats; automatic forking is unavailable in this preview." TextWrapping="Wrap" Margin="0,8,0,0" />
+                    <DataGrid ItemsSource="{Binding Conflicts}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True" HeadersVisibility="Column">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="170" />
+                            <DataGridTextColumn Header="Status" Binding="{Binding Action}" Width="170" />
+                            <DataGridTextColumn Header="Session ID" Binding="{Binding Id}" Width="250" />
+                            <DataGridTextColumn Header="Retained revision path" Binding="{Binding TargetPath}" Width="400" />
+                            <DataGridTextColumn Header="Reason" Binding="{Binding Reason}" Width="300" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+            <TabItem Header="Restore Point Manager" DataContext="{Binding Merge}">
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="280" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" MinWidth="280" /></Grid.ColumnDefinitions>
+                    <DockPanel>
+                        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8"><Button Content="Refresh Points" Command="{Binding RefreshPointsCommand}" /><Button Content="Roll Back Selected" Command="{Binding RecoverCommand}" /></WrapPanel>
+                        <DataGrid ItemsSource="{Binding Points}" SelectedItem="{Binding SelectedPoint}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True" HeadersVisibility="Column">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Created" Binding="{Binding CreatedAt}" Width="180" />
+                                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" />
+                                <DataGridTextColumn Header="Codex profile" Binding="{Binding ProfileRoot}" Width="300" />
+                                <DataGridTextColumn Header="Restore point" Binding="{Binding Path}" Width="350" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                    <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="#D7DADD" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ToolTip="Resize restore points and log" />
+                    <DockPanel Grid.Column="2">
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <ListBox x:Name="MergeRecoveryLogList" ItemsSource="{Binding Log}" Style="{StaticResource LogList}" />
                     </DockPanel>
                 </Grid>
             </TabItem>

@@ -4,7 +4,23 @@ Codex Shuttle is an unofficial Windows backup and migration tool for local Codex
 
 It keeps a reusable differential package for moving conversations, workspaces, skills, plugins, rules, and Codex settings between computers. Backup packages are local artifacts and must never be committed to Git.
 
+## Important: Preserve Local History
+
+**Do not use Disaster Recovery (the old Restore tab) to combine histories from two computers.** Both `HistoryAndTools` and `FullProfile` replace selected history/state and can mirror-delete destination-only files. Preserving credentials is not the same as preserving conversations. Differential copying describes how files are transferred, not a safe history merge.
+
+Use **Merge Restore** only for supported profiles after reviewing its Dry Run. It preserves unrelated local conversations and does not copy workspace files. If the preview blocks an unsupported database layout, stop; do not fall back to Disaster Recovery or remove an index to bypass validation. Desktop GUI acceptance is still pending, so keep a separate verified local backup before trying the preview.
+
+Pushing this repository to GitHub protects committed source and documentation, **not Codex chats, private files or uncommitted work**. Disaster Recovery can also overwrite this local checkout if its parent workspace is selected. Remote commits remain recoverable even if the local checkout is replaced. See [restore safety and development handoff](docs/restore-safety-and-handoff.md).
+
 ## Features
+
+### v0.3 preview: Safe Merge Restore
+
+The new **Merge Restore** is separate from **Disaster Recovery** (the former Restore tab). It imports only explicitly selected missing conversations, skips identical contents and retains same-ID conflicts outside the active profile. It never mirror-deletes local conversations or copies workspace files, credentials, provider settings or tools. Verified local restore points and guarded rollback are mandatory for merge changes.
+
+This is a restricted **preview**, not automatic synchronization. Primary `state_5.sqlite` with self-contained legacy JSONL is supported; nested indexes and unsupported formats are blocked. Installed app-server list/read/resume tests pass, but isolated Desktop GUI acceptance remains pending. Phase 2 project policies and Phase 3 cloud/encryption are not implemented.
+
+Read the [technical design](docs/v0.3-safe-merge-design.md) and [test results](docs/v0.3-test-results.md) before using the preview. The following full-profile migration features and modes describe Backup/Disaster Recovery, not Merge Restore.
 
 - Detects `%USERPROFILE%\.codex`, `CODEX_HOME`, or a user-selected Codex Home.
 - Migrates sessions, archived sessions, SQLite state, memories, skills, plugins, rules, agents, and personal `.agents` marketplace data.
@@ -67,7 +83,7 @@ dotnet publish src/CodexShuttle.App/CodexShuttle.App.csproj -p:PublishProfile=Po
 
 ## Portable Release
 
-Non-developers can download the `CodexShuttle-v0.2.7-win-x64.exe` asset from the
+Non-developers can download the portable `.exe` asset from the
 [latest GitHub release](https://github.com/uart-aplex/CodexShuttle/releases/latest). It is a self-contained single-file app and does not require a separate .NET installation or DLL download.
 
 Keep the executable on a local drive or USB drive, close Codex, and then run it. Windows SmartScreen may show an unknown-publisher warning because the project does not currently use a paid code-signing certificate. Verify the downloaded file against `SHA256SUMS.txt` from the same release before running it.

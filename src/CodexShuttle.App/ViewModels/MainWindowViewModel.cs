@@ -98,6 +98,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             return Task.CompletedTask;
         });
 
+        Merge = new MergeViewModel(() => CodexHome, () => IsBackupRunning || IsRestoreRunning || IsScanning,
+            _settings.MergePackage, path => { _settings.MergePackage = path; SaveSettings(); });
+        Merge.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(Merge.IsBusy)) { OnPropertyChanged(nameof(IsAnyOperationRunning)); RaiseOperationCommandStates(); } };
         _ = RefreshAsync();
         if (!string.IsNullOrWhiteSpace(_restorePackage))
         {
@@ -106,6 +109,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     }
 
     public RelayCommand RefreshCommand { get; }
+    public MergeViewModel Merge { get; }
     public RelayCommand BrowseBackupDestinationCommand { get; }
     public RelayCommand BrowseRestorePackageCommand { get; }
     public RelayCommand CreateBackupCommand { get; }
@@ -142,7 +146,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string CodexHome
     {
         get => _codexHome;
-        set => SetProperty(ref _codexHome, value);
+        set { if (SetProperty(ref _codexHome, value)) Merge?.Invalidate(); }
     }
 
     public string CodexRunningStatus
@@ -257,7 +261,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public bool IsScanning
     {
         get => _isScanning;
-        set => SetProperty(ref _isScanning, value);
+        set { if (SetProperty(ref _isScanning, value)) Merge?.RaiseCommands(); }
     }
 
     public bool IsBackupRunning
@@ -298,7 +302,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         set => SetProperty(ref _restoreProgressStatus, value);
     }
 
-    public bool IsAnyOperationRunning => IsBackupRunning || IsRestoreRunning;
+    public bool IsAnyOperationRunning => IsBackupRunning || IsRestoreRunning || (Merge?.IsBusy ?? false);
 
     private bool HasCurrentDryRun => !string.IsNullOrWhiteSpace(_lastDryRunFingerprint)
         && _lastDryRunFingerprint.Equals(CreateRestoreFingerprint(), StringComparison.Ordinal);
@@ -590,6 +594,12 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public bool RequestClose()
     {
+        if (Merge.IsBusy)
+        {
+            Merge.Cancel();
+            OperationStatus = "Cancel requested. Wait for merge verification or rollback before closing.";
+            return false;
+        }
         if (!IsBackupRunning && !IsRestoreRunning)
         {
             return true;
@@ -973,6 +983,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private void RaiseOperationCommandStates()
     {
+        Merge?.RaiseCommands();
         RefreshCommand.RaiseCanExecuteChanged();
         BrowseBackupDestinationCommand.RaiseCanExecuteChanged();
         BrowseRestorePackageCommand.RaiseCanExecuteChanged();
