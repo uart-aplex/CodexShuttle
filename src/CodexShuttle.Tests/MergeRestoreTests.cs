@@ -11,6 +11,18 @@ namespace CodexShuttle.Tests;
 public sealed class MergeRestoreTests
 {
     [TestMethod]
+    public async Task CompressedOnlyHistory_IsBlockedInsteadOfSilentlySkipped()
+    {
+        using var fixture = new MergeFixture();
+        var id = fixture.AddSession(fixture.Source, "compressed history");
+        var path = fixture.SessionPath(fixture.Source, id);
+        File.Move(path, path + ".zst");
+        await fixture.Package();
+        var error = await Assert.ThrowsExceptionAsync<InvalidDataException>(() => fixture.Service().PreviewAsync(fixture.Request()));
+        StringAssert.Contains(error.Message, "compressed-only");
+        Assert.IsFalse(File.Exists(fixture.SessionPath(fixture.Target, id)));
+    }
+    [TestMethod]
     public async Task DisjointImport_PreservesPersonalHistorySettingsAndWorkspace_AndIsIdempotent()
     {
         using var fixture = new MergeFixture();

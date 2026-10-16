@@ -14,6 +14,12 @@ Pushing this repository to GitHub protects committed source and documentation, *
 
 ## Features
 
+### v0.3.0-preview.2: Restore Compatibility Fix
+
+Disaster Recovery now resolves compressed `.jsonl.zst` rollouts using Codex's logical `.jsonl` paths, includes the paginated history database and WAL in `HistoryAndTools`, and validates required history data before overwriting. Merge Restore explicitly blocks compressed-only histories instead of silently omitting them; paginated histories remain unsupported for merge.
+
+See the [fix report and 84-test results](docs/v0.3.0-preview.2-restore-fix.md) and [source recovery instructions](docs/restore-safety-and-handoff.md#recover-the-fixes-after-workspace-replacement). This does not make replacement restore a safe merge. The latest stable release download may still be older than this source preview.
+
 ### v0.3 preview: Safe Merge Restore
 
 The new **Merge Restore** is separate from **Disaster Recovery** (the former Restore tab). It imports only explicitly selected missing conversations, skips identical contents and retains same-ID conflicts outside the active profile. It never mirror-deletes local conversations or copies workspace files, credentials, provider settings or tools. Verified local restore points and guarded rollback are mandatory for merge changes.

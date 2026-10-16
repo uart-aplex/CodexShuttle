@@ -7,6 +7,21 @@ namespace CodexShuttle.Tests;
 public sealed class RestorePlannerTests
 {
     [TestMethod]
+    public void HistoryAndTools_IncludesPaginatedHistoryDatabaseAndWal()
+    {
+        var root = CreateTempPackage();
+        try
+        {
+            foreach (var suffix in new[] { "", "-wal", "-shm" })
+                File.WriteAllText(Path.Combine(root, ".codex", "thread_history_1.sqlite" + suffix), "fixture");
+            var plan = new RestorePlanner().CreatePlan(root, new BackupManifest { CodexHomeExists = true }, new RestoreOptions());
+            foreach (var suffix in new[] { "", "-wal", "-shm" })
+                Assert.IsTrue(plan.Any(p => Path.GetFileName(p.SourcePath) == "thread_history_1.sqlite" + suffix));
+            Assert.IsFalse(plan.Any(p => Path.GetFileName(p.SourcePath) is "auth.json" or "config.toml"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [TestMethod]
     public void CreatePlan_HistoryAndTools_IncludesSkillsButPreservesConfig()
     {
         var root = CreateTempPackage();

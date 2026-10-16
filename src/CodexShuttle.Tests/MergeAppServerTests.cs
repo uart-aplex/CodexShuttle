@@ -54,19 +54,20 @@ public sealed class MergeAppServerTests
         // No turn/start: this check does not invoke a model or use production credentials.
     }
 
-    private sealed class IsolatedAppServer : IAsyncDisposable
+    internal sealed class IsolatedAppServer : IAsyncDisposable
     {
         private readonly Process _process;
         private readonly Task<string> _errors;
         private int _id;
-        public IsolatedAppServer(string executable, MergeFixture fixture)
+        public IsolatedAppServer(string executable, MergeFixture fixture, string? profile = null)
         {
+            profile ??= fixture.Target;
             var start = new ProcessStartInfo(executable, "app-server") { UseShellExecute = false, CreateNoWindow = true,
                 RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = fixture.Workspace };
-            start.Environment["CODEX_HOME"] = fixture.Target;
-            start.Environment["CODEX_SQLITE_HOME"] = fixture.Target;
-            start.Environment["HOME"] = Path.GetDirectoryName(fixture.Target)!;
-            start.Environment["USERPROFILE"] = Path.GetDirectoryName(fixture.Target)!;
+            start.Environment["CODEX_HOME"] = profile;
+            start.Environment["CODEX_SQLITE_HOME"] = profile;
+            start.Environment["HOME"] = Path.GetDirectoryName(profile)!;
+            start.Environment["USERPROFILE"] = Path.GetDirectoryName(profile)!;
             start.Environment["APPDATA"] = Path.Combine(fixture.Root, "appdata");
             start.Environment["LOCALAPPDATA"] = Path.Combine(fixture.Root, "localappdata");
             foreach (var key in start.Environment.Keys.Where(k => k.Contains("API_KEY", StringComparison.OrdinalIgnoreCase) || k.Contains("TOKEN", StringComparison.OrdinalIgnoreCase)).ToArray())
@@ -74,13 +75,13 @@ public sealed class MergeAppServerTests
             _process = Process.Start(start)!;
             _errors = _process.StandardError.ReadToEndAsync();
         }
-        public async Task Initialize()
+        public async Task Initialize(bool experimental = false)
         {
-            await Call("initialize", new { clientInfo = new { name = "codex_shuttle_test", version = "0.3.0" } });
+            await Call("initialize", new { clientInfo = new { name = "codex_shuttle_test", version = "0.3.0" }, capabilities = new { experimentalApi = experimental } });
             await _process.StandardInput.WriteLineAsync("{\"method\":\"initialized\"}");
             await _process.StandardInput.FlushAsync();
         }
-        public async Task<JsonElement> Call(string method, object parameters)
+        public async Task<JsonElement> Call(string method, object? parameters)
         {
             var id = ++_id;
             await _process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { id, method, @params = parameters }));

@@ -1,6 +1,6 @@
 # Restore Safety and Development Handoff
 
-Updated: 2026-10-10. Development baseline: `0.3.0-preview.1`.
+Updated: 2026-10-16. Development baseline: `0.3.0-preview.2`.
 
 ## Why This Change Exists
 
@@ -19,7 +19,7 @@ The safety invariant for the new merge implementation is: importing office data 
 | Disaster Recovery / HistoryAndTools | Replace selected local state from a backup | Can overwrite history and delete destination-only files despite retaining credentials/provider configuration |
 | Disaster Recovery / FullProfile | Broader replacement from a backup | Can overwrite profile settings, history and selected workspaces; credentials remain excluded |
 
-Safe merge support is restricted to verified primary `state_5.sqlite` / legacy JSONL layouts. Nested or unknown database layouts are blocked. A blocked preview is not permission to delete indexes or use disaster recovery as a substitute. The Desktop GUI acceptance gate remains open.
+Safe merge support is restricted to verified primary `state_5.sqlite` / self-contained legacy JSONL layouts. Nested or unknown database layouts, paginated histories and compressed-only transcripts are blocked. A blocked preview is not permission to delete indexes or use disaster recovery as a substitute. The Desktop GUI acceptance gate remains open.
 
 ## Before the Next Import
 
@@ -44,7 +44,7 @@ After an accidental overwrite, first preserve the affected local directory witho
 
 - Main repository: `uart-aplex/CodexShuttle`; Windows WPF / .NET 8.
 - [Technical design](v0.3-safe-merge-design.md): researched official app-server APIs and the supplied `tang12306/codex-sync` reference. Reference code was not copied or executed.
-- [Validation report](v0.3-test-results.md): 73 passing cases, including isolated installed app-server list/read/resume; Desktop GUI acceptance pending.
+- [Original validation report](v0.3-test-results.md): 73 passing cases for preview.1. [Preview.2 fix report](v0.3.0-preview.2-restore-fix.md): 84 passing cases, including isolated native compressed-rollout read/resume; Desktop GUI acceptance pending.
 - `src/CodexShuttle.Core/Merge/`: separate merge inventory, validation, SQLite adapter, verified local snapshots and journal recovery. Never route merge through the mirror restore service.
 - `src/CodexShuttle.App/ViewModels/MergeViewModel.cs`: explicit selection, preview invalidation, manual confirmation and rollback UI. No automatic synchronization.
 - Existing `RestoreService`, `RestorePlanner` and mirror-copy code remain disaster-recovery operations. Do not describe them as safe merge.
@@ -52,3 +52,34 @@ After an accidental overwrite, first preserve the affected local directory witho
 - Later phases remain unimplemented: stable project/device registry, persistent Local Only policies, workspace sync, immutable cloud transport, encryption, ancestry-aware forks and ownership leases.
 
 Do not infer completion from an old backup folder's date or a restored executable's presence. Verify the GitHub commit, actual program version, mode and final operation result.
+
+## Recover the Fixes After Workspace Replacement
+
+Before replacement restore, keep the new executable and independent recovery data outside every selected restore target, for example under `%USERPROFILE%\CodexShuttle-Safety`. Do not restore that folder from the incoming package. A project-specific recovery copy is not necessarily a standard Shuttle package or a one-click merge source.
+
+Remote GitHub commits survive a local workspace replacement. Once restore is finished, inspect the restored checkout:
+
+```powershell
+Set-Location 'E:\CodexWorkspace\SoftwareDevelopment\CodexShuttle'
+git status --short
+git remote -v
+```
+
+Only if there are no local changes, `origin` is `https://github.com/uart-aplex/CodexShuttle.git`, and this is the intended `main` checkout, update without discarding local commits:
+
+```powershell
+git switch main
+git fetch origin
+git merge --ff-only origin/main
+git log -1 --oneline
+```
+
+If the checkout is dirty, diverged, missing `.git`, or has a different remote, stop. Preserve it and clone the correct repository to a new empty directory outside restore targets instead. Do not use `reset --hard`, force-push or delete remaining local changes to make recovery succeed.
+
+**Updating source does not update an ignored executable in `outputs/` or a USB package.** Run the separately protected `0.3.0-preview.2` executable, or rebuild from the recovered source with .NET SDK 8:
+
+```powershell
+dotnet publish src/CodexShuttle.App/CodexShuttle.App.csproj -p:PublishProfile=Portable-win-x64 -p:PublishDir="$env:USERPROFILE\CodexShuttle-Safety\rebuilt-preview2\"
+```
+
+Check the actual program version before use. GitHub source recovery cannot restore local-only chats; those require their independent recovery data. Replacement restore still overwrites selected state even when these compatibility fixes are installed.

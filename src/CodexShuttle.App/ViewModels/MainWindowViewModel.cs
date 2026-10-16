@@ -717,7 +717,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             RestoreProgressStatus = message;
             AddRestoreLog(message);
         });
-        progress.Report($"Codex Shuttle {typeof(MainWindowViewModel).Assembly.GetName().Version}; restore package: {RestorePackage}; target: {pathResolver.GetCurrentCodexHome()}");
+        var buildVersion = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(MainWindowViewModel).Assembly)?.InformationalVersion.Split('+')[0];
+        progress.Report($"Codex Shuttle {buildVersion}; Disaster Recovery ({SelectedMigrationMode}); restore package: {RestorePackage}; target: {pathResolver.GetCurrentCodexHome()}");
+        progress.Report("WARNING: This is replacement restore, NOT merge. Destination-only conversations and selected workspace files may be deleted; newer matching files may be overwritten.");
         try
         {
             var restorePackage = RestorePackage;

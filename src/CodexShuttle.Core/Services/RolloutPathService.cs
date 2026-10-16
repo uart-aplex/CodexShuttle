@@ -23,19 +23,37 @@ public sealed class RolloutPathService
         var skippedDormantPaths = 0;
         try
         {
-            var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var historyPath = Path.Combine(codexHome, "thread_history_1.sqlite");
+            if (File.Exists(historyPath))
+            {
+                progress?.Report($"Checking paginated conversation history: {historyPath}");
+                using var history = new SqliteConnection(new SqliteConnectionStringBuilder
+                    { DataSource = historyPath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+                await history.OpenAsync(cancellationToken);
+                using var check = history.CreateCommand();
+                check.CommandText = "PRAGMA quick_check(1)";
+                if (!string.Equals(Convert.ToString(await check.ExecuteScalarAsync(cancellationToken)), "ok", StringComparison.OrdinalIgnoreCase))
+                    return OperationResult.Fail("Paginated conversation history failed SQLite validation.", historyPath);
+            }
+            var files = new Dictionary<string, RolloutFile>(StringComparer.OrdinalIgnoreCase);
             foreach (var directory in new[] { "sessions", "archived_sessions" })
             {
                 var root = Path.Combine(codexHome, directory);
                 if (!Directory.Exists(root)) continue;
-                foreach (var file in Directory.EnumerateFiles(root, "*.jsonl", new EnumerationOptions
+                foreach (var file in Directory.EnumerateFiles(root, "*.jsonl*", new EnumerationOptions
                          { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false }))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    files.Add(Path.GetRelativePath(codexHome, file).Replace('\\', '/'), file);
+                    if (!file.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)
+                        && !file.EndsWith(".jsonl.zst", StringComparison.OrdinalIgnoreCase)) continue;
+                    var logical = PlainPath(file);
+                    var relative = Path.GetRelativePath(codexHome, logical).Replace('\\', '/');
+                    // Codex keeps logical .jsonl references and prefers plain files when both exist.
+                    if (!files.ContainsKey(relative) || logical.Equals(file, StringComparison.OrdinalIgnoreCase))
+                        files[relative] = new(logical, file);
                 }
             }
-            var byName = files.Values.GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            var byName = files.Values.GroupBy(file => Path.GetFileName(file.LogicalPath), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key!, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
 
             foreach (var database in EnumerateStateDatabases(codexHome))
@@ -60,6 +78,13 @@ public sealed class RolloutPathService
                     using var schema = connection.CreateCommand();
                     schema.CommandText = "SELECT count(*) FROM pragma_table_info('threads') WHERE name='rollout_path'";
                     if (Convert.ToInt64(await schema.ExecuteScalarAsync(cancellationToken)) == 0) continue;
+                    schema.CommandText = "SELECT count(*) FROM pragma_table_info('threads') WHERE name='history_mode'";
+                    if (Convert.ToInt64(await schema.ExecuteScalarAsync(cancellationToken)) != 0 && !File.Exists(historyPath))
+                    {
+                        schema.CommandText = "SELECT count(*) FROM threads WHERE history_mode IS NOT NULL AND history_mode NOT IN ('legacy', '')";
+                        if (Convert.ToInt64(await schema.ExecuteScalarAsync(cancellationToken)) != 0)
+                            return OperationResult.Fail("A non-legacy conversation requires thread_history_1.sqlite, but that history database is missing.", database);
+                    }
 
                     using var transaction = connection.BeginTransaction(deferred: !repair);
                     var fixes = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -82,14 +107,14 @@ public sealed class RolloutPathService
                             if (target is null)
                                 return OperationResult.Fail("A conversation points to a missing or ambiguous rollout file.",
                                     $"Database: {database}", $"Unresolved rollout: {original}");
-                            if (requireResolvedPaths && !Normalize(original).Equals(Normalize(target), StringComparison.OrdinalIgnoreCase))
+                            if (requireResolvedPaths && !Normalize(original).Equals(Normalize(target.LogicalPath), StringComparison.OrdinalIgnoreCase))
                                 return OperationResult.Fail("A conversation index still points outside the restored session location.",
-                                    $"Database: {database}", $"Stored rollout: {original}", $"Expected rollout: {target}");
+                                    $"Database: {database}", $"Stored rollout: {original}", $"Expected rollout: {target.LogicalPath}");
                             // Opening verifies access as well as existence; no conversation text is logged.
-                            using (File.Open(target, FileMode.Open, FileAccess.Read, FileShare.Read)) { }
+                            using (File.Open(target.PhysicalPath, FileMode.Open, FileAccess.Read, FileShare.Read)) { }
                             checkedPaths++;
-                            if (repair && !Normalize(original).Equals(Normalize(target), StringComparison.OrdinalIgnoreCase))
-                                fixes[original] = target;
+                            if (repair && !Normalize(original).Equals(Normalize(target.LogicalPath), StringComparison.OrdinalIgnoreCase))
+                                fixes[original] = target.LogicalPath;
                         }
                     }
 
@@ -136,9 +161,13 @@ public sealed class RolloutPathService
         }
     }
 
-    private static string? Resolve(string original, Dictionary<string, string> files, Dictionary<string, string[]> byName)
+    private sealed record RolloutFile(string LogicalPath, string PhysicalPath);
+
+    private static string PlainPath(string path) => path.EndsWith(".jsonl.zst", StringComparison.OrdinalIgnoreCase) ? path[..^4] : path;
+
+    private static RolloutFile? Resolve(string original, Dictionary<string, RolloutFile> files, Dictionary<string, RolloutFile[]> byName)
     {
-        var normalized = Normalize(original);
+        var normalized = PlainPath(Normalize(original));
         // Never resolve a package reference outside its two session directories.
         if (normalized.Split('/').Any(segment => segment is "." or "..")) return null;
         foreach (var prefix in new[] { "sessions/", "archived_sessions/" })

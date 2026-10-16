@@ -45,6 +45,13 @@ internal static class MergeFiles
     public static Dictionary<string, SessionFile> Inventory(string home, CancellationToken token)
     {
         var result = new Dictionary<string, SessionFile>(StringComparer.Ordinal);
+        foreach (var compressed in new[] { "sessions", "archived_sessions" }.SelectMany(name => Files(Path.Combine(home, name)))
+                     .Where(p => p.EndsWith(".jsonl.zst", StringComparison.OrdinalIgnoreCase)))
+        {
+            token.ThrowIfCancellationRequested();
+            if (!File.Exists(compressed[..^4]))
+                throw new InvalidDataException("Merge Restore does not yet support compressed-only histories. No conversations were imported. Do not switch to Disaster Recovery to merge histories.");
+        }
         foreach (var path in new[] { "sessions", "archived_sessions" }.SelectMany(name => Files(Path.Combine(home, name)))
                      .Where(p => p.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)))
         {

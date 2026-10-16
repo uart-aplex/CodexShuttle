@@ -144,4 +144,137 @@ public sealed class RestoreRolloutRegressionTests
         var hash = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(checksums)));
         await File.WriteAllTextAsync(Path.Combine(package, BackupService.CompleteMarkerFileName), "ChecksumFileSha256=" + hash);
     }
+
+    [DataTestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    public async Task CompressedRollout_UsesLogicalPath_AndPreservesCompressedBytes(bool indexedCompressed, bool archived)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "CodexShuttleTests", Guid.NewGuid().ToString("N"));
+        var physical = Path.Combine(root, archived ? "archived_sessions" : "sessions", "rollout-compressed.jsonl.zst");
+        Directory.CreateDirectory(Path.GetDirectoryName(physical)!);
+        // Minimal empty Zstandard frame; path resolution never decompresses or rewrites it.
+        byte[] bytes = [0x28, 0xb5, 0x2f, 0xfd, 0x20, 0, 1, 0, 0];
+        await File.WriteAllBytesAsync(physical, bytes);
+        using (var db = OpenDatabase(Path.Combine(root, "state_5.sqlite")))
+        using (var command = db.CreateCommand())
+        {
+            command.CommandText = "CREATE TABLE threads(rollout_path TEXT); INSERT INTO threads VALUES($path)";
+            command.Parameters.AddWithValue("$path", @"\\?\C:\Users\uartc\.codex\sessions\rollout-compressed.jsonl" + (indexedCompressed ? ".zst" : ""));
+            command.ExecuteNonQuery();
+        }
+        try
+        {
+            var service = new RolloutPathService();
+            Assert.IsTrue((await service.CheckAsync(root, false)).Success);
+            Assert.IsTrue((await service.CheckAsync(root, true)).Success);
+            Assert.IsTrue((await service.CheckAsync(root, false, requireResolvedPaths: true)).Success);
+            using var db = OpenDatabase(Path.Combine(root, "state_5.sqlite"));
+            using var query = db.CreateCommand();
+            query.CommandText = "SELECT rollout_path FROM threads";
+            Assert.AreEqual(physical[..^4], query.ExecuteScalar());
+            Assert.IsFalse(File.Exists(physical[..^4]));
+            CollectionAssert.AreEqual(bytes, await File.ReadAllBytesAsync(physical));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
+    public async Task CompressedFallback_RejectsAmbiguousArchiveMatches()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "CodexShuttleTests", Guid.NewGuid().ToString("N"));
+        foreach (var folder in new[] { "one", "two" })
+        {
+            var directory = Path.Combine(root, "archived_sessions", folder);
+            Directory.CreateDirectory(directory);
+            File.WriteAllBytes(Path.Combine(directory, "rollout-duplicate.jsonl.zst"), [1]);
+        }
+        using (var db = OpenDatabase(Path.Combine(root, "state_5.sqlite")))
+        using (var cmd = db.CreateCommand())
+        {
+            cmd.CommandText = "CREATE TABLE threads(rollout_path TEXT); INSERT INTO threads VALUES('C:/old/sessions/rollout-duplicate.jsonl')";
+            cmd.ExecuteNonQuery();
+        }
+        try { Assert.IsFalse((await new RolloutPathService().CheckAsync(root, true)).Success); }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
+    public async Task PlainAndCompressedSiblings_ResolveAsOneLogicalRollout()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "CodexShuttleTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "sessions"));
+        var plain = Path.Combine(root, "sessions", "rollout-pair.jsonl");
+        File.WriteAllText(plain, "plain content");
+        File.WriteAllBytes(plain + ".zst", [1, 2]);
+        using (var db = OpenDatabase(Path.Combine(root, "state_5.sqlite")))
+        using (var cmd = db.CreateCommand())
+        {
+            cmd.CommandText = "CREATE TABLE threads(rollout_path TEXT); INSERT INTO threads VALUES('C:/old/archived_sessions/rollout-pair.jsonl.zst')";
+            cmd.ExecuteNonQuery();
+        }
+        try
+        {
+            Assert.IsTrue((await new RolloutPathService().CheckAsync(root, true)).Success);
+            using var db = OpenDatabase(Path.Combine(root, "state_5.sqlite"));
+            using var query = db.CreateCommand();
+            query.CommandText = "SELECT rollout_path FROM threads";
+            Assert.AreEqual(plain, query.ExecuteScalar());
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
+    public async Task HistoryAndTools_RestoresHistoryDatabaseIncludingCommittedWal()
+    {
+        using var fixture = new MergeFixture();
+        fixture.AddSession(fixture.Source, "history database transfer");
+        var seed = Path.Combine(fixture.Root, "history-seed.sqlite");
+        using (var history = OpenDatabase(seed))
+        {
+            using (var command = history.CreateCommand())
+            {
+                command.CommandText = "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE history_test(value TEXT); INSERT INTO history_test VALUES('committed history');";
+                command.ExecuteNonQuery();
+            }
+            // Produce a quiescent package fixture with committed data still in WAL.
+            foreach (var suffix in new[] { "", "-wal" })
+            {
+                using var input = new FileStream(seed + suffix, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var output = File.Create(Path.Combine(fixture.Source, "thread_history_1.sqlite" + suffix));
+                input.CopyTo(output);
+            }
+        }
+        Assert.IsTrue(File.Exists(Path.Combine(fixture.Source, "thread_history_1.sqlite-wal")));
+        await fixture.Package();
+        var service = new RestoreService(new FileMirrorService(), new ManifestService(), new RestorePathResolver(fixture.Target, Path.Combine(fixture.Root, "home")));
+        var result = await service.RestoreAsync(fixture.PackageRoot, new RestoreOptions());
+        Assert.IsTrue(result.Success, result.Message + string.Join(";", result.Errors));
+        using var restored = OpenDatabase(Path.Combine(fixture.Target, "thread_history_1.sqlite"));
+        using var read = restored.CreateCommand();
+        read.CommandText = "SELECT value FROM history_test";
+        Assert.AreEqual("committed history", read.ExecuteScalar());
+    }
+
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task MissingOrCorruptPaginatedDatabase_BlocksBeforeOverwrite(bool corrupt)
+    {
+        using var fixture = new MergeFixture();
+        fixture.AddSession(fixture.Source, "paginated metadata");
+        using (var source = OpenDatabase(Path.Combine(fixture.Source, "state_5.sqlite")))
+        using (var command = source.CreateCommand())
+        {
+            command.CommandText = "ALTER TABLE threads ADD COLUMN history_mode TEXT NOT NULL DEFAULT 'paginated'";
+            command.ExecuteNonQuery();
+        }
+        if (corrupt) File.WriteAllText(Path.Combine(fixture.Source, "thread_history_1.sqlite"), "corrupt SQLite");
+        await fixture.Package();
+        var before = SHA256.HashData(File.ReadAllBytes(Path.Combine(fixture.Target, "state_5.sqlite")));
+        var service = new RestoreService(new FileMirrorService(), new ManifestService(), new RestorePathResolver(fixture.Target));
+        Assert.IsFalse((await service.RestoreAsync(fixture.PackageRoot, new RestoreOptions())).Success);
+        CollectionAssert.AreEqual(before, SHA256.HashData(File.ReadAllBytes(Path.Combine(fixture.Target, "state_5.sqlite"))));
+    }
 }
