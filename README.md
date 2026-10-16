@@ -38,6 +38,8 @@ Read the [technical design](docs/v0.3-safe-merge-design.md) and [test results](d
 
 ## Operation Results And Logs
 
+`0.3.0-preview.2` fixes a WPF crash caused by auto-scrolling during log collection updates. Backup, restore and merge logs now defer and coalesce scrolling until the collection notifications finish. Windows UI regression tests cover burst updates, bounded-log trimming, clearing, disabling auto-scroll and closing the window. If an earlier version crashed during backup, keep the package and its sibling `.rollback` folder together at the same path; retrying Backup recovers the interrupted transaction before updating. Do not restore from the interrupted package until backup completes and verifies successfully.
+
 Only the final **Backup completed and verified** result confirms a new backup. Individual folder-copy messages are intermediate steps. A failed or canceled update reports that no new backup was saved and identifies the retained backup's date. A cleanup failure is not reported as success.
 
 Progress cannot replace a final result after an operation ends. Each backup, restore and path-repair run writes a separate timestamped operation log under `%LOCALAPPDATA%\CodexShuttle\logs`; use **Open Logs** to find it. Logs are flushed as progress arrives, independent of the on-screen 300-line limit, and include reported errors, the app version and selected paths. They are not a raw transcript of every copied file. Logs may contain private paths; review them before sharing. Older schema-2 packages remain supported for restore.
