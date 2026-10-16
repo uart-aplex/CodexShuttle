@@ -92,8 +92,10 @@ public sealed class MergeRestoreService
             var path = Path.Combine(sourceHome, name);
             if (File.Exists(path) && !checksummed.Contains(path)) throw new InvalidDataException($"Unverified metadata: {path}");
         }
-        using var sourceDb = MergeDatabase.Open(Path.Combine(sourceHome, "state_5.sqlite"));
-        using var targetDb = MergeDatabase.Open(Path.Combine(request.ProfileRoot, "state_5.sqlite"));
+        using var sourceCopy = await SqliteInspectionCopy.CreateAsync(Path.Combine(sourceHome, "state_5.sqlite"), token);
+        using var targetCopy = await SqliteInspectionCopy.CreateAsync(Path.Combine(request.ProfileRoot, "state_5.sqlite"), token);
+        using var sourceDb = MergeDatabase.Open(sourceCopy.DatabasePath);
+        using var targetDb = MergeDatabase.Open(targetCopy.DatabasePath);
         var sourceRows = MergeDatabase.Rows(sourceDb);
         var localRows = MergeDatabase.Rows(targetDb);
         var localIndex = Index(request.ProfileRoot);
@@ -181,7 +183,8 @@ public sealed class MergeRestoreService
             if (writes.Length == 0) return OperationResult.Ok("No changes: selected conversations/revisions are already present or no sessions were selected.");
             var manifest = (await new ManifestService().LoadAsync(Path.Combine(plan.Request.PackageRoot, "manifest.json"), token))!;
             var sourceHome = new PathSafetyService().ResolvePackagePath(plan.Request.PackageRoot, manifest.CodexPackagePath);
-            using var sourceDb = MergeDatabase.Open(Path.Combine(sourceHome, "state_5.sqlite"));
+            using var sourceCopy = await SqliteInspectionCopy.CreateAsync(Path.Combine(sourceHome, "state_5.sqlite"), token);
+            using var sourceDb = MergeDatabase.Open(sourceCopy.DatabasePath);
             var sourceRows = MergeDatabase.Rows(sourceDb);
             using var database = MergeDatabase.Open(Path.Combine(plan.Request.ProfileRoot, "state_5.sqlite"), true);
             var indexPath = Path.Combine(plan.Request.ProfileRoot, "session_index.jsonl");

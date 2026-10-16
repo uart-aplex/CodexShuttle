@@ -251,6 +251,8 @@ public sealed class RestoreRolloutRegressionTests
         var service = new RestoreService(new FileMirrorService(), new ManifestService(), new RestorePathResolver(fixture.Target, Path.Combine(fixture.Root, "home")));
         var result = await service.RestoreAsync(fixture.PackageRoot, new RestoreOptions());
         Assert.IsTrue(result.Success, result.Message + string.Join(";", result.Errors));
+        var verified = await new ChecksumService().VerifySha256FileAsync(fixture.PackageRoot, Path.Combine(fixture.PackageRoot, "checksums.sha256"));
+        Assert.IsTrue(verified.Success, "Restore must leave the source package checksums valid: " + string.Join(";", verified.Errors));
         using var restored = OpenDatabase(Path.Combine(fixture.Target, "thread_history_1.sqlite"));
         using var read = restored.CreateCommand();
         read.CommandText = "SELECT value FROM history_test";

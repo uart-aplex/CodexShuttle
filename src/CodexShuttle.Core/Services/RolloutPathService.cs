@@ -27,8 +27,9 @@ public sealed class RolloutPathService
             if (File.Exists(historyPath))
             {
                 progress?.Report($"Checking paginated conversation history: {historyPath}");
+                using var historyCopy = await SqliteInspectionCopy.CreateAsync(historyPath, cancellationToken);
                 using var history = new SqliteConnection(new SqliteConnectionStringBuilder
-                    { DataSource = historyPath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+                    { DataSource = historyCopy.DatabasePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
                 await history.OpenAsync(cancellationToken);
                 using var check = history.CreateCommand();
                 check.CommandText = "PRAGMA quick_check(1)";
@@ -68,9 +69,10 @@ public sealed class RolloutPathService
                     File.SetAttributes(database, attributes & ~FileAttributes.ReadOnly);
                 try
                 {
+                    using var inspection = repair ? null : await SqliteInspectionCopy.CreateAsync(database, cancellationToken);
                     using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
                     {
-                        DataSource = database,
+                        DataSource = inspection?.DatabasePath ?? database,
                         Mode = repair ? SqliteOpenMode.ReadWrite : SqliteOpenMode.ReadOnly,
                         Pooling = false
                     }.ToString());

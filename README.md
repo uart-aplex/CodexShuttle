@@ -14,6 +14,10 @@ Pushing this repository to GitHub protects committed source and documentation, *
 
 ## Features
 
+### v0.3.0-preview.4: Non-Mutating Database Inspection
+
+Use preview.4 or newer for restore checks. SQLite read-only connections can still modify the source `-shm` cache, invalidating a previously verified package. Database validation and merge inspection now open private temporary copies of the database and committed WAL, never the packaged database itself. Strict checksum verification is unchanged. See the [incident explanation and 97-test results](docs/v0.3.0-preview.4-checksum-fix.md). Do not bypass a checksum error or blindly regenerate the checksum list.
+
 ### v0.3.0-preview.3: Restore Compatibility Fix
 
 Disaster Recovery now resolves compressed `.jsonl.zst` rollouts using Codex's logical `.jsonl` paths, includes the paginated history database and WAL in `HistoryAndTools`, and validates required history data before overwriting. Merge Restore explicitly blocks compressed-only histories instead of silently omitting them; paginated histories remain unsupported for merge.

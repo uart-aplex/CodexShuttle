@@ -1,6 +1,6 @@
 # Restore Safety and Development Handoff
 
-Updated: 2026-10-16. Development baseline: `0.3.0-preview.3`.
+Updated: 2026-10-16. Development baseline: `0.3.0-preview.4`.
 
 ## Why This Change Exists
 
@@ -45,6 +45,7 @@ After an accidental overwrite, first preserve the affected local directory witho
 - Main repository: `uart-aplex/CodexShuttle`; Windows WPF / .NET 8.
 - [Technical design](v0.3-safe-merge-design.md): researched official app-server APIs and the supplied `tang12306/codex-sync` reference. Reference code was not copied or executed.
 - [Original validation report](v0.3-test-results.md): 73 passing cases for preview.1. [Preview.3 fix report](v0.3.0-preview.3-restore-fix.md): updated core and WPF regression results, including isolated native compressed-rollout read/resume; Desktop GUI acceptance pending.
+- [Preview.4 checksum fix](v0.3.0-preview.4-checksum-fix.md): 97 passing tests; database inspection no longer opens original package databases through SQLite. Do not use earlier builds for package inspection.
 - `src/CodexShuttle.Core/Merge/`: separate merge inventory, validation, SQLite adapter, verified local snapshots and journal recovery. Never route merge through the mirror restore service.
 - `src/CodexShuttle.App/ViewModels/MergeViewModel.cs`: explicit selection, preview invalidation, manual confirmation and rollback UI. No automatic synchronization.
 - Existing `RestoreService`, `RestorePlanner` and mirror-copy code remain disaster-recovery operations. Do not describe them as safe merge.
@@ -76,10 +77,10 @@ git log -1 --oneline
 
 If the checkout is dirty, diverged, missing `.git`, or has a different remote, stop. Preserve it and clone the correct repository to a new empty directory outside restore targets instead. Do not use `reset --hard`, force-push or delete remaining local changes to make recovery succeed.
 
-**Updating source does not update an ignored executable in `outputs/` or a USB package.** Run the separately protected `0.3.0-preview.3` executable, or rebuild from the recovered source with .NET SDK 8:
+**Updating source does not update an ignored executable in `outputs/` or a USB package.** Run the separately protected `0.3.0-preview.4` executable, or rebuild from the recovered source with .NET SDK 8:
 
 ```powershell
-dotnet publish src/CodexShuttle.App/CodexShuttle.App.csproj -p:PublishProfile=Portable-win-x64 -p:PublishDir="$env:USERPROFILE\CodexShuttle-Safety\rebuilt-preview3\"
+dotnet publish src/CodexShuttle.App/CodexShuttle.App.csproj -p:PublishProfile=Portable-win-x64 -p:PublishDir="$env:USERPROFILE\CodexShuttle-Safety\rebuilt-preview4\"
 ```
 
 Check the actual program version before use. GitHub source recovery cannot restore local-only chats; those require their independent recovery data. Replacement restore still overwrites selected state even when these compatibility fixes are installed.
