@@ -1,4 +1,5 @@
 using System.Windows;
+using CodexShuttle.App.Services;
 using CodexShuttle.App.ViewModels;
 
 namespace CodexShuttle.App;
@@ -12,16 +13,14 @@ public partial class MainWindow : Window
             ?? typeof(MainWindow).Assembly.GetName().Version?.ToString(3));
         DataContext = new MainWindowViewModel();
         var model = (MainWindowViewModel)DataContext;
-        model.BackupLog.CollectionChanged += (_, _) => FollowLog(BackupLogList, BackupFollow.IsChecked == true);
-        model.RestoreLog.CollectionChanged += (_, _) => FollowLog(RestoreLogList, RestoreFollow.IsChecked == true);
-        model.Merge.Log.CollectionChanged += (_, _) => FollowLog(MergeLogList, MergeFollow.IsChecked == true);
+        var backupScroll = new LogAutoScroll(BackupLogList, () => BackupFollow.IsChecked == true);
+        var restoreScroll = new LogAutoScroll(RestoreLogList, () => RestoreFollow.IsChecked == true);
+        var mergeScroll = new LogAutoScroll(MergeLogList, () => MergeFollow.IsChecked == true);
+        model.BackupLog.CollectionChanged += (_, _) => backupScroll.Request();
+        model.RestoreLog.CollectionChanged += (_, _) => restoreScroll.Request();
+        model.Merge.Log.CollectionChanged += (_, _) => mergeScroll.Request();
         Width = Math.Min(Width, SystemParameters.WorkArea.Width);
         Height = Math.Min(Height, SystemParameters.WorkArea.Height);
-    }
-
-    private static void FollowLog(System.Windows.Controls.ListBox list, bool follow)
-    {
-        if (follow && list.Items.Count > 0) list.ScrollIntoView(list.Items[list.Items.Count - 1]);
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
