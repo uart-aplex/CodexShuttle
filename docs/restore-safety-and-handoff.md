@@ -1,6 +1,8 @@
 # Restore Safety and Development Handoff
 
-Updated: 2026-10-16. Development baseline: `0.3.0-preview.4`.
+Updated: 2026-11-07. Development baseline: `0.3.0-preview.13`.
+
+For the consolidated incident/change record and post-restore source recovery procedure, read [the 2026-11-07 recovery handoff](2026-11-07-recovery-handoff.md) first.
 
 ## Why This Change Exists
 
@@ -15,19 +17,19 @@ The safety invariant for the new merge implementation is: importing office data 
 | Operation | Intended use | Effect on destination |
 | --- | --- | --- |
 | Backup | Export a reusable package | Updates the chosen backup package; do not reuse the only office package to preserve home data |
-| Merge Restore (preview) | Explicitly import selected conversations | Adds missing IDs; skips identical content; retains divergent revisions separately; never copies workspaces/settings/tools |
+| Merge Restore (preview) | Import selected conversations and missing project files | Adds missing IDs and verified paginated continuations; adds missing workspace files by default; keeps existing project files and local-ahead chats; retains divergent revisions separately; does not merge active-profile settings/tools |
 | Disaster Recovery / HistoryAndTools | Replace selected local state from a backup | Can overwrite history and delete destination-only files despite retaining credentials/provider configuration |
 | Disaster Recovery / FullProfile | Broader replacement from a backup | Can overwrite profile settings, history and selected workspaces; credentials remain excluded |
 
-Safe merge support is restricted to verified primary `state_5.sqlite` / self-contained legacy JSONL layouts. Nested or unknown database layouts, paginated histories and compressed-only transcripts are blocked. A blocked preview is not permission to delete indexes or use disaster recovery as a substitute. The Desktop GUI acceptance gate remains open.
+Merge supports verified primary `state_5.sqlite` / self-contained legacy JSONL layouts and the reviewed `thread_history_1.sqlite` paginated layout, including compressed rollouts. Existing reconciled nested indexes are left untouched. Unreconciled nested indexes, mixed source history modes and unknown schemas remain blocked. A blocked preview is not permission to delete indexes or use disaster recovery as a substitute. The Desktop GUI acceptance gate remains open.
 
 ## Before the Next Import
 
 1. Keep the newest program and read its version. An executable in an older USB package may still perform the old restore workflow.
 2. Preserve this computer's current Codex data in a separate, verified local backup while Codex is closed. Use a different backup destination from the incoming office package. Do not overwrite the only copy of either computer's data.
 3. Commit and push eligible source changes. Keep private/non-GitHub files and uncommitted work separately protected. Never upload a Codex profile, credentials or raw conversations to this public repository.
-4. Use Merge Restore, select the package, review Dry Run and explicitly select conversations. Selection/path changes require another Dry Run. Confirm the destination profile belongs to this computer.
-5. Leave workspace paths unchanged where possible (especially shared E: locations). Merge Restore itself does not copy workspace files. Different-drive mappings affect imported structured working directories, not arbitrary links in historical message text.
+4. Close Codex, use Merge Restore, select the package and review Dry Run. **Select New + Updates** selects available Add and Update entries; review both counts before Import Selected. Update verifies that the source contains the complete local history plus a continuation. LocalAhead is skipped. Selected conflicts are retained outside Codex, not added as chats. Checkbox changes do not require another scan; path/data changes do. Confirm the destination profile belongs to this computer. If another process holds the SQLite files open, close it before retrying; do not bypass the private-copy checks.
+5. Leave workspace paths unchanged where possible (especially shared E: locations). Preview.11 adds missing files from all enabled backup workspaces when Add missing workspace files is checked. Review its per-workspace summary separately from conversation selection. Existing same-path files remain local even when different. Missing project data absent from the backup still blocks a new conversation. Whole-workspace mappings affect destination files and structured working directories, not arbitrary links in historical text; subfolder mappings require a separate backup root or conversation-only mode.
 6. If unsupported layout, corruption or missing paths are reported, stop and retain both originals. Do not use Disaster Recovery just to make the import proceed.
 7. Close all Codex Desktop/CLI/IDE sessions before applying. A verified local metadata/index restore point is mandatory. Conflicts remain separate retained files, not automatically forked Desktop chats.
 
@@ -42,6 +44,13 @@ After an accidental overwrite, first preserve the affected local directory witho
 
 ## Development Handoff
 
+- [Preview.13 browser-cache restore](v0.3.0-preview.13-browser-cache-restore.md): retain an active recognized Chrome plugin cache instead of blocking the entire restore. Nested exclusions are honored by copying, Dry Run and path remapping; missing source ancestors are also protected against recursive mirror deletion. Log and final result disclose the exception. Other running executables remain guarded. No production restore was performed.
+- [Preview.12 incremental conversations](v0.3.0-preview.12-incremental-conversations.md): ordered rollout and projection prefix checks classify Update/LocalAhead; divergent branches remain external conflicts. Updates preserve original rollout files and local thread metadata, activate a new immutable revision, and replace only the selected thread's projection. The journal now restores updated rows as well as removing additions, including partial attached-database commits. Standard suite: 151 core + 10 WPF passed; isolated native add/update read/resume tests passed. No production merge was performed.
+- [Preview.11 additive workspaces](v0.3.0-preview.11-additive-workspaces.md): transfer missing workspace files before importing chats; never mirror, overwrite, or remove project files. Verified additions remain on partial failure or conversation rollback. New previews fingerprint missing-file contents; Apply can reuse approved hashes for unchanged source metadata but verifies every copied temporary file against the approved hash before a no-overwrite rename. Metadata is checked again after workspace transfer. Tests include missing-project native read/resume, cancellation/retry, path guards and collision/content changes.
+- Preview.10 clarifies actual import counts and adds Select New. A completed conflict-retention operation is not evidence of newly visible conversations. New threads can be blocked by a missing working directory; the recorded working directory can differ from the project name the user remembers. Check manifest metadata and the final operation journal before concluding a chat was imported. Do not silently map a missing project to a similarly named directory, create an empty placeholder to bypass checks, or use mirror restore to copy unrelated workspace data. Standard validation: 123 core and 9 WPF tests passed, four opt-in tests skipped.
+- [Preview.9 conflict classification](v0.3.0-preview.9-conflict-classification.md): compare paginated content separately from storage/migration metadata. Equivalent entries are no-ops, not overwrites. Exact checksums, approval fingerprints and rollback checks remain unchanged.
+- [Preview.8 paginated merge](v0.3.0-preview.8-paginated-merge.md): new-ID imports preserve physical rollout bytes and SQLite projection offsets together; both metadata databases participate in local rollback. Same-ID divergence remains an external retained conflict, not automatic message merging. Selection and terminal-status regressions are covered by WPF view-model tests.
+- [Preview.5 partial-restore fix](v0.3.0-preview.5-partial-restore-fix.md): copy errors previously bypassed automatic path repair. Running target executables now block before copying; failed copies only trigger index-path recovery after matching history file sets and hashes. A recovered index does not make the restore successful. Localized copy diagnostics are retained. 109 tests passed, with two opt-in app-server tests skipped on this machine.
 - Main repository: `uart-aplex/CodexShuttle`; Windows WPF / .NET 8.
 - [Technical design](v0.3-safe-merge-design.md): researched official app-server APIs and the supplied `tang12306/codex-sync` reference. Reference code was not copied or executed.
 - [Original validation report](v0.3-test-results.md): 73 passing cases for preview.1. [Preview.3 fix report](v0.3.0-preview.3-restore-fix.md): updated core and WPF regression results, including isolated native compressed-rollout read/resume; Desktop GUI acceptance pending.
@@ -77,10 +86,10 @@ git log -1 --oneline
 
 If the checkout is dirty, diverged, missing `.git`, or has a different remote, stop. Preserve it and clone the correct repository to a new empty directory outside restore targets instead. Do not use `reset --hard`, force-push or delete remaining local changes to make recovery succeed.
 
-**Updating source does not update an ignored executable in `outputs/` or a USB package.** Run the separately protected `0.3.0-preview.4` executable, or rebuild from the recovered source with .NET SDK 8:
+**Updating source does not update an ignored executable in `outputs/` or a USB package.** Run the separately protected `0.3.0-preview.13` executable, or rebuild from the recovered source with .NET SDK 8:
 
 ```powershell
-dotnet publish src/CodexShuttle.App/CodexShuttle.App.csproj -p:PublishProfile=Portable-win-x64 -p:PublishDir="$env:USERPROFILE\CodexShuttle-Safety\rebuilt-preview4\"
+dotnet publish src/CodexShuttle.App/CodexShuttle.App.csproj -p:PublishProfile=Portable-win-x64 -p:PublishDir="$env:USERPROFILE\CodexShuttle-Safety\rebuilt-preview13\"
 ```
 
 Check the actual program version before use. GitHub source recovery cannot restore local-only chats; those require their independent recovery data. Replacement restore still overwrites selected state even when these compatibility fixes are installed.

@@ -179,10 +179,7 @@ public sealed class ProfilePathRemapService
 
     private static bool IsExcluded(string root, string filePath, FileMirrorOptions options)
     {
-        var relative = Path.GetRelativePath(root, filePath);
-        var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (segments.Length > 1
-            && options.ExcludedDirectories.Contains(segments[0], StringComparer.OrdinalIgnoreCase))
+        if (options.ExcludesDirectory(root, filePath))
         {
             return true;
         }

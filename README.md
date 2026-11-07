@@ -6,13 +6,45 @@ It keeps a reusable differential package for moving conversations, workspaces, s
 
 ## Important: Preserve Local History
 
+**Recovering after a replacement restore?** Start with the [2026-11-07 recovery handoff](docs/2026-11-07-recovery-handoff.md), which records the fixes through preview.13, known limitations, test evidence and safe Git recovery/build steps.
+
 **Do not use Disaster Recovery (the old Restore tab) to combine histories from two computers.** Both `HistoryAndTools` and `FullProfile` replace selected history/state and can mirror-delete destination-only files. Preserving credentials is not the same as preserving conversations. Differential copying describes how files are transferred, not a safe history merge.
 
-Use **Merge Restore** only for supported profiles after reviewing its Dry Run. It preserves unrelated local conversations and does not copy workspace files. If the preview blocks an unsupported database layout, stop; do not fall back to Disaster Recovery or remove an index to bypass validation. Desktop GUI acceptance is still pending, so keep a separate verified local backup before trying the preview.
+Use **Merge Restore** only for supported profiles after reviewing its Dry Run. It preserves unrelated local conversations and, by default, adds missing files from the enabled backup workspaces without overwriting existing files. If the preview blocks an unsupported database layout, stop; do not fall back to Disaster Recovery or remove an index to bypass validation. Desktop GUI acceptance is still pending, so keep a separate verified local backup before trying the preview.
 
 Pushing this repository to GitHub protects committed source and documentation, **not Codex chats, private files or uncommitted work**. Disaster Recovery can also overwrite this local checkout if its parent workspace is selected. Remote commits remain recoverable even if the local checkout is replaced. See [restore safety and development handoff](docs/restore-safety-and-handoff.md).
 
 ## Features
+
+### v0.3.0-preview.13: Restore With An Active Chrome Extension Host
+
+Disaster Recovery no longer blocks solely because the recognized bundled Chrome extension host is running. Dry Run and Restore preserve that local Chrome plugin cache, exclude it from copying, mirror deletion and profile-path remapping, and report the exception. Missing source ancestors are also retained when needed to prevent recursive mirror deletion. Other selected data, including conversations and their automatic path repair, is restored normally. Inactive Chrome caches still restore normally. Unknown executables and programs in other selected folders remain blockers; Codex itself must still be closed. No browser process is terminated automatically.
+
+### v0.3.0-preview.12: Continue Existing Conversations
+
+Paginated Merge Restore now recognizes verified same-ID continuations. **Update** means the incoming rollout and projected history contain all local history in the same order, with additional records at the end. **LocalAhead** keeps the more complete local conversation without writing. **Select New + Updates** selects missing conversations and supported continuations, excluding conflicts and local-ahead entries.
+
+Updates preserve local titles, project associations, pins, archive state and provider metadata. Original rollout revisions are retained, and guarded rollback restores the previous database rows. Divergent histories remain conflicts outside Codex; they are not concatenated into a potentially invalid conversation. Existing workspace files are still not overwritten. See [incremental merge behavior and validation](docs/v0.3.0-preview.12-incremental-conversations.md).
+
+### v0.3.0-preview.11: Add Missing Projects Alongside Conversations
+
+**Add missing workspace files** is on by default. Dry Run lists additions and retained existing files per backup workspace. Missing conversation working directories are allowed when the selected backup can actually supply them; Merge copies and verifies those workspace files before inserting conversations. It does not create empty placeholder projects to bypass missing backup data.
+
+Existing files and local-only files are never replaced or removed. Completed workspace additions are retained on cancellation, conversation failure or conversation rollback, so retry only adds the remainder. No workspace snapshot is made. Turning off workspace copying restores the conversation-only behavior. See [transfer rules, recovery behavior and validation](docs/v0.3.0-preview.11-additive-workspaces.md).
+
+### v0.3.0-preview.10: Explicit Import Selection And Outcomes
+
+Merge Restore provides **Select New**, selecting only available additions and clearing other selections. The preview and confirmation show how many conversations will actually be added, how many conflicts will only be retained outside Codex, and how many available additions remain unselected. A conflict-only operation explicitly reports that no conversations were added to Codex. Missing-workspace errors include the exact path, and Add/Blocked decisions are recorded in the local log. Preview.10 did not copy workspace files; preview.11 adds missing-file transfer. Preview.12 adds verified same-ID continuations.
+
+### v0.3.0-preview.9: Distinguish Content From Migration Metadata
+
+Paginated merge now reports **Equivalent** when the conversation contents match after accounting for recorded profile/workspace path mappings, JSON formatting, compression, known settings-only events and projection positions. Equivalent entries keep the local copy without writing or creating another restore point. Package checksums and rollback fingerprints still use exact bytes/state. Actual differences in messages, tools or projected turns remain conflicts, with a more specific reason beside the Action column. See the [fix and validation report](docs/v0.3.0-preview.9-conflict-classification.md).
+
+### v0.3.0-preview.8: Paginated Conversation Merge
+
+Merge Restore now supports the validated primary `state_5.sqlite` plus `thread_history_1.sqlite` paginated layout, including compressed `.jsonl.zst` rollouts. A dormant nested index is accepted only when Codex's reconciliation marker already exists; it is not deleted or rewritten. Unknown schemas and unreconciled indexes remain blocked.
+
+After Dry Run, select the desired conversations and accept the preview warning to enable **Import Selected**, without repeating Dry Run for each checkbox change. Path/data changes still require revalidation. Terminal failures no longer disappear behind a generic selection-changed status. See [compatibility, safety limits and validation](docs/v0.3.0-preview.8-paginated-merge.md).
 
 ### v0.3.0-preview.4: Non-Mutating Database Inspection
 
@@ -20,15 +52,15 @@ Use preview.4 or newer for restore checks. SQLite read-only connections can stil
 
 ### v0.3.0-preview.3: Restore Compatibility Fix
 
-Disaster Recovery now resolves compressed `.jsonl.zst` rollouts using Codex's logical `.jsonl` paths, includes the paginated history database and WAL in `HistoryAndTools`, and validates required history data before overwriting. Merge Restore explicitly blocks compressed-only histories instead of silently omitting them; paginated histories remain unsupported for merge.
+Disaster Recovery now resolves compressed `.jsonl.zst` rollouts using Codex's logical `.jsonl` paths, includes the paginated history database and WAL in `HistoryAndTools`, and validates required history data before overwriting. Preview.3 blocked compressed-only and paginated histories for merge; preview.8 adds a separately validated paginated adapter.
 
 This version also retains preview.2's log auto-scroll crash fix. See the [fix report and test results](docs/v0.3.0-preview.3-restore-fix.md) and [source recovery instructions](docs/restore-safety-and-handoff.md#recover-the-fixes-after-workspace-replacement). This does not make replacement restore a safe merge. The latest stable release download may still be older than this source preview.
 
 ### v0.3 preview: Safe Merge Restore
 
-The new **Merge Restore** is separate from **Disaster Recovery** (the former Restore tab). It imports only explicitly selected missing conversations, skips identical contents and retains same-ID conflicts outside the active profile. It never mirror-deletes local conversations or copies workspace files, credentials, provider settings or tools. Verified local restore points and guarded rollback are mandatory for merge changes.
+The new **Merge Restore** is separate from **Disaster Recovery** (the former Restore tab). It imports explicitly selected missing conversations and verified paginated continuations, skips identical or local-ahead histories and retains divergent same-ID conflicts outside the active profile. It can add missing workspace files, but never mirror-deletes local conversations or overwrites existing workspace files. Active-profile credentials, provider settings and tools are not merged. Verified local metadata restore points and guarded rollback are mandatory for conversation changes; workspace additions remain independent and are never deleted by conversation rollback.
 
-This is a restricted **preview**, not automatic synchronization. Primary `state_5.sqlite` with self-contained legacy JSONL is supported; nested indexes and unsupported formats are blocked. Installed app-server list/read/resume tests pass, but isolated Desktop GUI acceptance remains pending. Phase 2 project policies and Phase 3 cloud/encryption are not implemented.
+This is a restricted **preview**, not automatic synchronization. Supported layouts are primary `state_5.sqlite` with self-contained legacy JSONL, and the validated paginated layout described above. Mixed source history modes, unknown schemas and unreconciled nested indexes remain blocked. Installed app-server read/resume tests pass, but isolated Desktop GUI acceptance remains pending. Phase 2 project policies and Phase 3 cloud/encryption are not implemented.
 
 Read the [technical design](docs/v0.3-safe-merge-design.md) and [test results](docs/v0.3-test-results.md) before using the preview. The following full-profile migration features and modes describe Backup/Disaster Recovery, not Merge Restore.
 
@@ -47,6 +79,10 @@ Read the [technical design](docs/v0.3-safe-merge-design.md) and [test results](d
 - Keeps backup/restore logs in resizable right-hand panes with wrapping and optional auto-scroll; settings scroll independently on small screens.
 
 ## Operation Results And Logs
+
+`0.3.0-preview.6` adds Disaster Recovery Dry Run progress to the Restore Log and timestamped `dry-run-*.log` files. It reports each target, source/destination scans, sampled current files, counts, warnings, and completion/failure/cancellation. Dry Run remains read-only for package and destination files; it does not verify every file checksum or enable unsupported Merge Restore formats.
+
+`0.3.0-preview.5` checks for running executables in restore targets before copying. On copy failure, it attempts conversation-index path recovery only after byte-for-byte verification of the copied history; the restore still fails and remaining settings are not claimed restored. Localized Robocopy errors and summaries are retained. See the [partial-restore fix and safety limits](docs/v0.3.0-preview.5-partial-restore-fix.md).
 
 `0.3.0-preview.2` fixes a WPF crash caused by auto-scrolling during log collection updates. Backup, restore and merge logs now defer and coalesce scrolling until the collection notifications finish. Windows UI regression tests cover burst updates, bounded-log trimming, clearing, disabling auto-scroll and closing the window. If an earlier version crashed during backup, keep the package and its sibling `.rollback` folder together at the same path; retrying Backup recovers the interrupted transaction before updating. Do not restore from the interrupted package until backup completes and verifies successfully.
 

@@ -250,7 +250,7 @@
                                 <Button Content="Dry Run" Command="{Binding DryRunCommand}" />
                                 <Button Content="Restore" Command="{Binding RestoreCommand}" />
                                 <Button Content="Repair Conversation Paths" Command="{Binding RepairConversationPathsCommand}" />
-                                <Button Content="Cancel Restore" Command="{Binding CancelRestoreCommand}"
+                                <Button Content="Cancel" Command="{Binding CancelRestoreCommand}"
                                         Visibility="{Binding IsRestoreRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             </WrapPanel>
                             <Border Background="#FFF5D6" BorderBrush="#E3BE55" BorderThickness="1" Padding="12" Margin="0,14,0,0" CornerRadius="4">
@@ -308,6 +308,7 @@
                             <DockPanel Margin="0,4,0,12"><Button DockPanel.Dock="Right" Content="Browse..." Command="{Binding BrowseCommand}" Margin="6,0,0,0" /><TextBox Text="{Binding Package, UpdateSourceTrigger=PropertyChanged}" /></DockPanel>
                             <TextBlock Text="Destination Codex profile" />
                             <TextBlock Text="{Binding ProfileRoot}" TextWrapping="Wrap" Margin="0,4,0,12" />
+                            <CheckBox Content="Add missing workspace files" IsChecked="{Binding IncludeMissingWorkspaceFiles}" IsEnabled="{Binding CanEdit}" Margin="0,0,0,8" />
                             <DockPanel Margin="0,0,0,6"><Button DockPanel.Dock="Right" Content="Add Mapping" Command="{Binding AddMappingCommand}" Margin="6,0,0,0" /><TextBlock Text="Workspace paths" FontWeight="SemiBold" /></DockPanel>
                             <ItemsControl ItemsSource="{Binding Mappings}">
                                 <ItemsControl.ItemTemplate><DataTemplate><StackPanel Margin="0,0,0,8">
@@ -317,17 +318,33 @@
                                     <DockPanel Margin="0,4,0,0"><Button DockPanel.Dock="Right" Content="Browse..." Command="{Binding BrowseCommand}" Margin="6,0,0,0" /><TextBox Text="{Binding Target, UpdateSourceTrigger=PropertyChanged}" ToolTip="This computer's workspace path" /></DockPanel>
                                 </StackPanel></DataTemplate></ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <WrapPanel Margin="0,6,0,8"><Button Content="Dry Run" Command="{Binding PreviewCommand}" /><Button Content="Import Selected" Command="{Binding ApplyCommand}" /></WrapPanel>
+                            <TextBlock Text="Workspace additions" FontWeight="SemiBold" Margin="0,4,0,6" />
+                            <DataGrid ItemsSource="{Binding Workspaces}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="True" HeadersVisibility="Column" Height="125" HorizontalScrollBarVisibility="Auto">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Destination" Binding="{Binding Target}" Width="260" />
+                                    <DataGridTextColumn Header="Add files" Binding="{Binding NewFiles, StringFormat=N0}" Width="80" />
+                                    <DataGridTextColumn Header="Keep files" Binding="{Binding RetainedFiles, StringFormat=N0}" Width="80" />
+                                    <DataGridTextColumn Header="Size to add" Binding="{Binding Size}" Width="90" />
+                                    <DataGridTextColumn Header="Add folders" Binding="{Binding NewDirectories, StringFormat=N0}" Width="85" />
+                                    <DataGridTextColumn Header="Excluded" Binding="{Binding ExcludedFiles, StringFormat=N0}" Width="80" />
+                                    <DataGridTextColumn Header="Backup source" Binding="{Binding Source}" Width="300" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                            <WrapPanel Margin="0,6,0,8"><Button Content="Dry Run" Command="{Binding PreviewCommand}" /><Button Content="Select New + Updates" Command="{Binding SelectNewCommand}" /><Button Content="Import Selected" Command="{Binding ApplyCommand}" /></WrapPanel>
                             <CheckBox IsChecked="{Binding Acknowledged}" Margin="0,0,0,12"><TextBlock Text="I accept preview-version risk; Desktop GUI validation is pending." TextWrapping="Wrap" /></CheckBox>
                             <TextBlock Text="Conversations" FontWeight="SemiBold" Margin="0,0,0,6" />
                             <DataGrid ItemsSource="{Binding Sessions}" AutoGenerateColumns="False" CanUserAddRows="False" HeadersVisibility="Column" Height="250" HorizontalScrollBarVisibility="Auto">
                                 <DataGrid.Columns>
                                     <DataGridCheckBoxColumn Header="Import" Binding="{Binding Selected, UpdateSourceTrigger=PropertyChanged}" Width="55" />
-                                    <DataGridTextColumn Header="Title" Binding="{Binding Entry.Title}" IsReadOnly="True" Width="160" />
+                                    <DataGridTextColumn Header="Title" Binding="{Binding Entry.Title}" IsReadOnly="True" Width="160" MaxWidth="360">
+                                        <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis" /><Setter Property="ToolTip" Value="{Binding Entry.Title}" /></Style></DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
                                     <DataGridTextColumn Header="Action" Binding="{Binding Entry.Action}" IsReadOnly="True" Width="115" />
+                                    <DataGridTextColumn Header="Reason" Binding="{Binding Entry.Reason}" IsReadOnly="True" Width="300">
+                                        <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextTrimming" Value="CharacterEllipsis" /><Setter Property="ToolTip" Value="{Binding Entry.Reason}" /></Style></DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
                                     <DataGridTextColumn Header="Session ID" Binding="{Binding Entry.Id}" IsReadOnly="True" Width="250" />
                                     <DataGridTextColumn Header="Affected path" Binding="{Binding Entry.TargetPath}" IsReadOnly="True" Width="300" />
-                                    <DataGridTextColumn Header="Reason" Binding="{Binding Entry.Reason}" IsReadOnly="True" Width="300" />
                                 </DataGrid.Columns>
                             </DataGrid>
                         </StackPanel>

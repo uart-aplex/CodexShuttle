@@ -20,13 +20,20 @@ public sealed class MergeViewModel : ViewModelBase
     private string _status = "Preview release. Desktop GUI acceptance is pending. Automatic sync is off.";
     private bool _busy;
     private bool _acknowledged;
+    private bool _includeMissingWorkspaceFiles = true;
     private RestorePointInfo? _selectedPoint;
     public MergeViewModel(Func<string> profile, Func<bool> otherBusy, string package, Action<string> savePackage)
     {
         _profile = profile; _otherBusy = otherBusy; _package = package; _savePackage = savePackage;
         BrowseCommand = new(() => { var path = Browse("Select a completed backup package", Package); if (path != null) Package = PackagePathResolver.NormalizeRestorePackage(path); return Task.CompletedTask; }, Available);
         PreviewCommand = new(Preview, () => Available() && !string.IsNullOrWhiteSpace(Package));
-        ApplyCommand = new(Apply, () => Available() && _acknowledged && _preview != null && _preview.Request.SelectedIds.Length > 0
+        SelectNewCommand = new(() =>
+        {
+            foreach (var session in Sessions) session.Selected = session.Entry.Action is MergeAction.Add or MergeAction.Update;
+            SelectionChanged();
+            return Task.CompletedTask;
+        }, () => Available() && _preview != null && Sessions.Any(s => s.Entry.Action is MergeAction.Add or MergeAction.Update));
+        ApplyCommand = new(Apply, () => Available() && _acknowledged && _preview != null && (_preview.Request.SelectedIds.Length > 0 || _preview.Workspaces.HasChanges)
             && !_preview.Entries.Any(e => _preview.Request.SelectedIds.Contains(e.Id) && e.Action == MergeAction.Blocked));
         CancelCommand = new(() => { _cancel?.Cancel(); return Task.CompletedTask; }, () => IsBusy);
         AddMappingCommand = new(() => { var row = new MergeMapping(Invalidate, mapping => { Mappings.Remove(mapping); Invalidate(); }); Mappings.Add(row); Invalidate(); return Task.CompletedTask; }, Available);
@@ -35,11 +42,13 @@ public sealed class MergeViewModel : ViewModelBase
     }
     public ObservableCollection<MergeSelection> Sessions { get; } = new();
     public ObservableCollection<MergeMapping> Mappings { get; } = new();
+    public ObservableCollection<WorkspaceMergeSummary> Workspaces { get; } = new();
     public ObservableCollection<MergeEntry> Conflicts { get; } = new();
     public ObservableCollection<RestorePointInfo> Points { get; } = new();
     public ObservableCollection<string> Log { get; } = new();
     public RelayCommand BrowseCommand { get; }
     public RelayCommand PreviewCommand { get; }
+    public RelayCommand SelectNewCommand { get; }
     public RelayCommand ApplyCommand { get; }
     public RelayCommand CancelCommand { get; }
     public RelayCommand AddMappingCommand { get; }
@@ -51,37 +60,56 @@ public sealed class MergeViewModel : ViewModelBase
     public bool IsBusy { get => _busy; private set { if (SetProperty(ref _busy, value)) { OnPropertyChanged(nameof(CanEdit)); RaiseCommands(); } } }
     public bool CanEdit => Available();
     public bool Acknowledged { get => _acknowledged; set { SetProperty(ref _acknowledged, value); RaiseCommands(); } }
+    public bool IncludeMissingWorkspaceFiles { get => _includeMissingWorkspaceFiles; set { if (SetProperty(ref _includeMissingWorkspaceFiles, value)) Invalidate(); } }
     public RestorePointInfo? SelectedPoint { get => _selectedPoint; set { SetProperty(ref _selectedPoint, value); RaiseCommands(); } }
     private bool Available() => !IsBusy && !_otherBusy();
-    public void Invalidate() { _preview = null; Status = "Selection or paths changed. Run Dry Run to approve the current plan."; OnPropertyChanged(nameof(ProfileRoot)); RaiseCommands(); }
+    public void Invalidate()
+    {
+        var hadPreview = _preview != null;
+        _preview = null;
+        Workspaces.Clear();
+        if (hadPreview) Status = "Paths or workspace options changed. Run Dry Run to approve the current plan.";
+        OnPropertyChanged(nameof(ProfileRoot)); RaiseCommands();
+    }
+    private void SelectionChanged()
+    {
+        if (_preview != null)
+        {
+            _preview = _preview with { Request = _preview.Request with { SelectedIds = Sessions.Where(s => s.Selected).Select(s => s.Entry.Id).Order().ToArray() } };
+            Status = _preview.SelectionSummary;
+        }
+        RaiseCommands();
+    }
     public void RaiseCommands()
     {
-        foreach (var command in new[] { BrowseCommand, PreviewCommand, ApplyCommand, CancelCommand, AddMappingCommand, RefreshPointsCommand, RecoverCommand }) command?.RaiseCanExecuteChanged();
+        foreach (var command in new[] { BrowseCommand, PreviewCommand, SelectNewCommand, ApplyCommand, CancelCommand, AddMappingCommand, RefreshPointsCommand, RecoverCommand }) command?.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(CanEdit));
     }
     public void Cancel() => _cancel?.Cancel();
     private MergeRequest Request() => new(Package, ProfileRoot, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         Sessions.Where(s => s.Selected).Select(s => s.Entry.Id).ToArray(),
         Mappings.Where(m => !string.IsNullOrWhiteSpace(m.Source) || !string.IsNullOrWhiteSpace(m.Target))
-            .ToDictionary(m => m.Source, m => m.Target, StringComparer.OrdinalIgnoreCase));
+            .ToDictionary(m => m.Source, m => m.Target, StringComparer.OrdinalIgnoreCase)) { IncludeMissingWorkspaceFiles = IncludeMissingWorkspaceFiles };
     private Task Preview() => Run(async (token, progress) =>
     {
         var request = Request();
         _preview = null;
         var preview = await Task.Run(() => _service.PreviewAsync(request, token, progress), token);
-        Sessions.Clear(); Conflicts.Clear();
+        if (request.PackageRoot != Package || request.ProfileRoot != ProfileRoot) throw new InvalidOperationException("Paths changed during Dry Run; scan again.");
+        Sessions.Clear(); Conflicts.Clear(); Workspaces.Clear();
+        foreach (var workspace in preview.Workspaces.Roots) Workspaces.Add(workspace);
         foreach (var entry in preview.Entries)
         {
-            Sessions.Add(new(entry, request.SelectedIds.Contains(entry.Id), Invalidate));
+            Sessions.Add(new(entry, request.SelectedIds.Contains(entry.Id), SelectionChanged));
             if (entry.Action is MergeAction.Conflict or MergeAction.ConflictAlreadyPreserved) Conflicts.Add(entry);
         }
         _preview = preview;
-        Status = $"{preview.Summary} Selected: {request.SelectedIds.Length}. Source: {preview.SourceComputer}, {preview.BackupDate:yyyy-MM-dd HH:mm zzz}.";
+        Status = $"{preview.Summary} {preview.SelectionSummary} Source: {preview.SourceComputer}, {preview.BackupDate:yyyy-MM-dd HH:mm zzz}.";
     });
     private Task Apply()
     {
         var plan = _preview!;
-        if (System.Windows.MessageBox.Show($"Import {plan.Request.SelectedIds.Length} selected conversations/revisions into:\n{plan.Request.ProfileRoot}\n\nExisting conversations and workspaces will not be overwritten. Conflicts are retained outside Codex, not opened as new chats. A verified local restore point is required.\n\nClose Codex Desktop, CLI and IDE sessions before proceeding.",
+        if (System.Windows.MessageBox.Show($"{plan.SelectionSummary}\n\nDestination:\n{plan.Request.ProfileRoot}\n\nSelected continuations update existing conversations only after verifying that all local history is included. Original revisions are retained for recovery. Local-ahead and divergent histories are not replaced. Missing workspace files are added and kept even if conversation import fails or is rolled back. Conflicts are retained outside Codex, not opened as new chats. A verified local metadata restore point is required for conversation changes.\n\nClose Codex Desktop, CLI and IDE sessions before proceeding.",
             "Confirm Merge Restore (Preview)", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return Task.CompletedTask;
         return Run(async (token, progress) =>
         {
@@ -93,7 +121,7 @@ public sealed class MergeViewModel : ViewModelBase
     private Task Recover()
     {
         var point = SelectedPoint!;
-        if (System.Windows.MessageBox.Show($"Undo merge {point.Id} on:\n{point.ProfileRoot}\n\nImported revisions will be removed only if the original state can be verified and no newer changes are detected. Close Codex first.",
+        if (System.Windows.MessageBox.Show($"Undo conversation merge {point.Id} on:\n{point.ProfileRoot}\n\nImported revisions will be removed only if the original state can be verified and no newer changes are detected. Added workspace files are kept. Close Codex first.",
             "Confirm Rollback", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return Task.CompletedTask;
         return Run(async (_, _) =>
         {
@@ -116,6 +144,7 @@ public sealed class MergeViewModel : ViewModelBase
         finally
         {
             journal.Finish(Status); AddLog(Status);
+            AddLog($"Full log: {journal.FilePath}");
             if (journal.Error != null) AddLog("Log file error: " + journal.Error);
             _cancel.Dispose(); _cancel = null; IsBusy = false;
         }

@@ -85,10 +85,12 @@ public sealed class FileMirrorService
 
         var outputLines = new List<string>();
         var errorLines = new List<string>();
+        var outputDiagnostics = new RobocopyDiagnostics();
+        var errorDiagnostics = new RobocopyDiagnostics();
         try
         {
-            var outputTask = ReadLinesAsync(process.StandardOutput, outputLines, progress, cancellationToken);
-            var errorTask = ReadLinesAsync(process.StandardError, errorLines, progress, cancellationToken);
+            var outputTask = ReadLinesAsync(process.StandardOutput, outputLines, outputDiagnostics, progress, cancellationToken);
+            var errorTask = ReadLinesAsync(process.StandardError, errorLines, errorDiagnostics, progress, cancellationToken);
             while (!process.HasExited)
             {
                 progress?.Report($"Still copying: {Path.GetFileName(sourcePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}");
@@ -108,7 +110,8 @@ public sealed class FileMirrorService
 
         if (process.ExitCode < 0 || process.ExitCode >= 8)
         {
-            var diagnostics = BuildFailureDiagnostics(process.ExitCode, outputLines, errorLines);
+            var diagnostics = BuildFailureDiagnostics(process.ExitCode, outputLines, errorLines,
+                outputDiagnostics.Errors.Concat(errorDiagnostics.Errors).ToArray());
             progress?.Report(diagnostics[0]);
             foreach (var line in diagnostics.Skip(1))
             {
@@ -166,6 +169,7 @@ public sealed class FileMirrorService
     private static async Task ReadLinesAsync(
         StreamReader reader,
         List<string> lines,
+        RobocopyDiagnostics diagnostics,
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
@@ -181,7 +185,7 @@ public sealed class FileMirrorService
 
             AddBounded(lines, line);
             var trimmed = line.Trim();
-            if (ShouldAlwaysShowLine(trimmed))
+            if (diagnostics.Observe(trimmed) || ShouldAlwaysShowLine(trimmed))
             {
                 progress?.Report(trimmed);
                 continue;
@@ -209,11 +213,12 @@ public sealed class FileMirrorService
     internal static IReadOnlyList<string> BuildFailureDiagnostics(
         int exitCode,
         IReadOnlyList<string> outputLines,
-        IReadOnlyList<string> errorLines)
+        IReadOnlyList<string> errorLines,
+        IReadOnlyList<string>? importantLines = null)
     {
         const int maxDetailLines = 40;
-        var details = outputLines
-            .TakeLast(35)
+        var details = (importantLines ?? []).TakeLast(25)
+            .Concat(outputLines.TakeLast(importantLines?.Count > 0 ? 10 : 35))
             .Concat(errorLines.TakeLast(5))
             .Select(line => line.Trim())
             .Where(line => !string.IsNullOrWhiteSpace(line))
@@ -251,7 +256,8 @@ public sealed class FileMirrorService
             || line.StartsWith("Ended", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Files :", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Bytes :", StringComparison.OrdinalIgnoreCase)
-            || line.StartsWith("Times :", StringComparison.OrdinalIgnoreCase);
+            || line.StartsWith("Times :", StringComparison.OrdinalIgnoreCase)
+            || RobocopyDiagnostics.IsSummary(line);
     }
 
     private static bool LooksLikeFileLine(string line)

@@ -13,13 +13,16 @@ public sealed class RestoreService
     private readonly ProfilePathRemapService _profilePathRemapService;
     private readonly RestorePathResolver _pathResolver;
     private readonly RolloutPathService _rolloutPaths = new();
+    private readonly RestoreProcessGuard _processGuard;
 
     public RestoreService(
         FileMirrorService fileMirrorService,
         ManifestService manifestService,
-        RestorePathResolver? pathResolver = null)
+        RestorePathResolver? pathResolver = null,
+        RestoreProcessGuard? processGuard = null)
     {
         _fileMirrorService = fileMirrorService;
+        _processGuard = processGuard ?? new RestoreProcessGuard();
         _pathResolver = pathResolver ?? new RestorePathResolver();
         _manifestService = manifestService;
         _planner = new RestorePlanner(pathResolver);
@@ -60,6 +63,18 @@ public sealed class RestoreService
         }
 
         progress?.Report("Checking restore destinations and free space...");
+        var targetHome = _pathResolver.ResolveCodexHome(manifest);
+        var warnings = new List<string>();
+        void PreserveBrowserCache()
+        {
+            var prepared = _processGuard.PreserveActiveBrowserCache(plan, targetHome);
+            plan = prepared.Plan;
+            foreach (var warning in prepared.Warnings.Where(warning => !warnings.Contains(warning)))
+            { warnings.Add(warning); progress?.Report("Warning: " + warning); }
+        }
+        PreserveBrowserCache();
+        var processCheck = _processGuard.Check(plan);
+        if (!processCheck.Success) return processCheck;
         var storageResult = _storagePreflightService.Validate(plan);
         if (!storageResult.Success)
         {
@@ -84,10 +99,17 @@ public sealed class RestoreService
             if (!packagePaths.Success) return packagePaths;
         }
 
+        PreserveBrowserCache();
+        processCheck = _processGuard.Check(plan);
+        if (!processCheck.Success) return processCheck;
+        var codexCopyStarted = false;
         foreach (var item in plan)
         {
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report($"Restoring {item.Name}");
+            codexCopyStarted |= manifest.CodexHomeExists &&
+                (item.DestinationPath.Equals(targetHome, StringComparison.OrdinalIgnoreCase)
+                    || RestoreProcessGuard.IsWithin(targetHome, item.DestinationPath));
             var result = item.IsDirectory
                 ? await _fileMirrorService.MirrorAsync(
                     item.SourcePath,
@@ -103,12 +125,30 @@ public sealed class RestoreService
 
             if (!result.Success)
             {
+                if (codexCopyStarted && !cancellationToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        var idle = _processGuard.Check(plan);
+                        var recovery = idle.Success
+                            ? await PartialRestorePathRecovery.RepairAsync(
+                                Path.Combine(backupRoot, manifest.CodexPackagePath), targetHome, cancellationToken, progress)
+                            : OperationResult.Fail("Automatic path recovery skipped: a program is running in a restore target.", idle.Errors.ToArray());
+                        progress?.Report(recovery.Message);
+                        result.Warnings.AddRange(recovery.Warnings);
+                        result.Errors.AddRange(recovery.Errors);
+                        result.Message = $"Restore incomplete. {result.Message} {recovery.Message}";
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        result.Message = $"Restore incomplete. {result.Message} Automatic path recovery canceled.";
+                    }
+                }
                 return result;
             }
         }
 
         var repairSummary = string.Empty;
-        var warnings = new List<string>();
         if (manifest.CodexHomeExists)
         {
             progress?.Report("Automatically repairing restored conversation paths...");
@@ -140,7 +180,9 @@ public sealed class RestoreService
             progress?.Report(restoredPaths.Message);
         }
 
-        var completed = OperationResult.Ok($"Restore completed. {repairSummary} {remapResult.Message}".Trim());
+        var cacheNote = warnings.Any(warning => warning.StartsWith("Active Chrome plugin cache", StringComparison.Ordinal))
+            ? " Active Chrome plugin cache was kept locally (not restored)." : "";
+        var completed = OperationResult.Ok($"Restore completed.{cacheNote} {repairSummary} {remapResult.Message}".Trim());
         completed.Warnings.AddRange(warnings);
         progress?.Report(completed.Message);
         return completed;

@@ -376,9 +376,10 @@ internal sealed class MergeFixture : IDisposable
     }
     public void Write(string root, string name, string value)
     { var path = Path.Combine(root, name); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, value); }
-    public async Task Package()
+    public async Task Package(string sourceUserProfile = @"C:\Users\OfficeUser", IEnumerable<WorkspaceEntry>? workspaces = null)
     {
-        var manifest = new BackupManifest { SourceComputer = "OFFICE", SourceUserProfile = @"C:\Users\OfficeUser", CodexHomeExists = true, CreatedAt = DateTimeOffset.Parse("2026-10-10T08:00:00+08:00") };
+        var manifest = new BackupManifest { SourceComputer = "OFFICE", SourceUserProfile = sourceUserProfile, CodexHomeExists = true, CreatedAt = DateTimeOffset.Parse("2026-10-10T08:00:00+08:00") };
+        if (workspaces is not null) manifest.WorkspacePaths.AddRange(workspaces);
         await new ManifestService().SaveAsync(manifest, Path.Combine(PackageRoot, "manifest.json"));
         await new ChecksumService().SaveSha256FileAsync(PackageRoot, new[] { ".codex", "manifest.json" }, Path.Combine(PackageRoot, "checksums.sha256"));
         File.WriteAllText(Path.Combine(PackageRoot, BackupService.CompleteMarkerFileName), "ChecksumFileSha256=" + MergeFiles.FileHash(Path.Combine(PackageRoot, "checksums.sha256")));

@@ -1,18 +1,25 @@
 using CodexShuttle.Core.Models;
 using System.IO.Enumeration;
+using System.Diagnostics;
 
 namespace CodexShuttle.Core.Services;
 
 public sealed class DryRunService
 {
-    public DryRunResult ComparePlan(IEnumerable<MirrorPlanItem> plan)
+    public DryRunResult ComparePlan(IEnumerable<MirrorPlanItem> plan, IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         var aggregate = new DryRunResult();
         foreach (var item in plan)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report($"Dry Run target: {item.Name}; source: {item.SourcePath}; destination: {item.DestinationPath}");
             var itemResult = item.IsDirectory
-                ? CompareMirror(item.SourcePath, item.DestinationPath, item.MirrorOptions)
+                ? CompareMirror(item.SourcePath, item.DestinationPath, item.MirrorOptions, progress, cancellationToken)
                 : CompareFile(item.SourcePath, item.DestinationPath);
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report($"Target scanned: {item.Name}; add {itemResult.FilesToCopy:N0}, overwrite {itemResult.FilesToOverwrite:N0}, delete {itemResult.FilesToDelete:N0} (preview only).");
+            foreach (var warning in itemResult.Warnings) progress?.Report($"Warning: {item.Name}: {warning}");
             aggregate.FilesToCopy += itemResult.FilesToCopy;
             aggregate.FilesToOverwrite += itemResult.FilesToOverwrite;
             aggregate.FilesToDelete += itemResult.FilesToDelete;
@@ -27,8 +34,11 @@ public sealed class DryRunService
     public DryRunResult CompareMirror(
         string sourceRoot,
         string destinationRoot,
-        FileMirrorOptions? options = null)
+        FileMirrorOptions? options = null,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var result = new DryRunResult();
 
         if (!Directory.Exists(sourceRoot))
@@ -38,13 +48,17 @@ public sealed class DryRunService
         }
 
         options ??= new FileMirrorOptions();
-        var sourceFiles = EnumerateRelativeFiles(sourceRoot, options);
+        var sourceFiles = EnumerateRelativeFiles(sourceRoot, options, "source", progress, cancellationToken);
         var destinationFiles = Directory.Exists(destinationRoot)
-            ? EnumerateRelativeFiles(destinationRoot, options)
+            ? EnumerateRelativeFiles(destinationRoot, options, "destination", progress, cancellationToken)
             : new Dictionary<string, FileInfo>(StringComparer.OrdinalIgnoreCase);
+
+        var comparison = new ScanProgress("Comparing", destinationRoot, progress);
 
         foreach (var (relativePath, sourceFile) in sourceFiles)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            comparison.Visit(sourceFile.FullName);
             var destinationPath = Path.Combine(destinationRoot, relativePath);
             if (!destinationFiles.TryGetValue(relativePath, out var destinationFile))
             {
@@ -77,6 +91,8 @@ public sealed class DryRunService
 
         foreach (var (relativePath, destinationFile) in destinationFiles)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            comparison.Visit(destinationFile.FullName);
             if (sourceFiles.ContainsKey(relativePath))
             {
                 continue;
@@ -91,6 +107,7 @@ public sealed class DryRunService
             });
         }
 
+        comparison.Finish();
         return result;
     }
 
@@ -136,23 +153,47 @@ public sealed class DryRunService
         return result;
     }
 
-    private static Dictionary<string, FileInfo> EnumerateRelativeFiles(string root, FileMirrorOptions options)
+    private static Dictionary<string, FileInfo> EnumerateRelativeFiles(string root, FileMirrorOptions options,
+        string side, IProgress<string>? progress, CancellationToken cancellationToken)
     {
-        return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-            .Select(file => new FileInfo(file))
-            .Where(file => !IsExcluded(root, file.FullName, options))
-            .ToDictionary(
-                file => Path.GetRelativePath(root, file.FullName),
-                file => file,
-                StringComparer.OrdinalIgnoreCase);
+        var files = new Dictionary<string, FileInfo>(StringComparer.OrdinalIgnoreCase);
+        var scan = new ScanProgress($"Scanning {side}", root, progress);
+        foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            scan.Visit(path);
+            if (!IsExcluded(root, path, options)) files.Add(Path.GetRelativePath(root, path), new FileInfo(path));
+        }
+        scan.Finish();
+        return files;
+    }
+
+    private sealed class ScanProgress
+    {
+        private readonly string _stage;
+        private readonly string _root;
+        private readonly IProgress<string>? _progress;
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        private long _count;
+        public ScanProgress(string stage, string root, IProgress<string>? progress)
+        {
+            _stage = stage; _root = root; _progress = progress;
+            progress?.Report($"{stage}: {root}");
+        }
+        public void Visit(string path)
+        {
+            _count++;
+            // Bound UI and journal traffic on large trees while showing the first file immediately.
+            if (_count != 1 && _clock.ElapsedMilliseconds < 1000) return;
+            _progress?.Report($"{_stage}: {_count:N0} files examined; current file: {path}");
+            _clock.Restart();
+        }
+        public void Finish() => _progress?.Report($"{_stage} finished: {_count:N0} files examined; {_root}");
     }
 
     private static bool IsExcluded(string root, string filePath, FileMirrorOptions options)
     {
-        var relative = Path.GetRelativePath(root, filePath);
-        var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (segments.Length > 1
-            && options.ExcludedDirectories.Contains(segments[0], StringComparer.OrdinalIgnoreCase))
+        if (options.ExcludesDirectory(root, filePath))
         {
             return true;
         }

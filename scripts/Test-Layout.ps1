@@ -24,11 +24,13 @@ $window.DataContext = [pscustomobject]@{
     Merge = [pscustomobject]@{
         Package = 'L:\CodexTransfer\CodexShuttle-Current'
         ProfileRoot = 'C:\Users\HomeUser\.codex'
-        Status = '3 additions, 2 identical, 1 conflict, 0 blocked. Selected: 4. Source: OFFICE, 2026-10-10 09:02 +08:00.'
+        Status = '3 additions, 4 continuations, 2 local ahead, 1 conflict, 0 blocked. Source: OFFICE, 2026-10-10 09:02 +08:00.'
         CanEdit = $true
         IsBusy = $false
+        IncludeMissingWorkspaceFiles = $true
+        Workspaces = @([pscustomobject]@{Target='E:\CodexWorkspace';Source='L:\CodexTransfer\CodexShuttle-Current\E_CodexWorkspace';NewFiles=123;RetainedFiles=900;NewDirectories=5;ExcludedFiles=2;Size='1.50 GB'})
         Log = $log
-        Sessions = @([pscustomobject]@{Selected=$false; Entry=[pscustomobject]@{Title='Example project';Action='Conflict';Id='11111111-1111-1111-1111-111111111111';TargetPath='C:\Users\HomeUser\AppData\Local\CodexShuttle\merge\conflicts\example.jsonl';Reason='Same ID, different contents'}})
+        Sessions = @([pscustomobject]@{Selected=$true; Entry=[pscustomobject]@{Title='Example project';Action='Update';Id='11111111-1111-1111-1111-111111111111';TargetPath='C:\Users\HomeUser\.codex\sessions\shuttle-revisions\example.jsonl';Reason='Incoming history extends the complete local history.'}})
         Mappings = @()
         Conflicts = @()
         Points = @()

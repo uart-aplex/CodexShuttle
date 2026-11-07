@@ -606,7 +606,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         var answer = System.Windows.MessageBox.Show(
-            "A backup or restore is still running. Closing now will stop the copy process and may leave the target incomplete. Close anyway?",
+            "An operation is still running. Closing now will cancel it. An actual backup or restore may leave the target incomplete; Dry Run does not change target files. Close anyway?",
             "Cancel Operation",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -623,8 +623,23 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private async Task DryRunAsync()
     {
+        InvalidateDryRun();
+        IsRestoreRunning = true;
+        _restoreCancellation = new CancellationTokenSource();
+        var cancellationToken = _restoreCancellation.Token;
+        RestoreLog.Clear();
+        RestoreResult = "Dry Run in progress. No files will be copied or deleted.";
+        RestoreResultBrush = "#735A10";
         OperationStatus = "Building complete restore plan...";
         DryRunSummary = "Scanning every selected restore target...";
+        using var progress = CreateJournal("dry-run", message =>
+        {
+            RestoreProgressStatus = message;
+            OperationStatus = message;
+            AddRestoreLog(message);
+        });
+        var version = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(MainWindowViewModel).Assembly)?.InformationalVersion.Split('+')[0];
+        progress.Report($"Codex Shuttle {version}; Dry Run started: {RestorePackage}; mode: {SelectedMigrationMode}. Preview only; no files are copied or deleted.");
         try
         {
             if (!_loadedRestorePackage.Equals(RestorePackage, StringComparison.OrdinalIgnoreCase))
@@ -633,7 +648,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             }
 
             var package = RestorePackage;
-            var manifest = await _manifestService.LoadAsync(Path.Combine(package, "manifest.json"));
+            cancellationToken.ThrowIfCancellationRequested();
+            progress.Report($"Reading package manifest: {package}");
+            var manifest = await _manifestService.LoadAsync(Path.Combine(package, "manifest.json"), cancellationToken);
             if (manifest is null)
             {
                 throw new InvalidDataException("manifest.json was not found in the restore package.");
@@ -646,12 +663,20 @@ public sealed class MainWindowViewModel : ViewModelBase
             }
 
             var options = CreateRestoreOptions();
+            var fingerprint = CreateRestoreFingerprint();
             var pathResolver = new RestorePathResolver(_settings.CodexHomeOverride);
             var result = await Task.Run(() =>
             {
                 var plan = new RestorePlanner(pathResolver).CreatePlan(package, manifest, options);
-                return _dryRunService.ComparePlan(plan);
-            });
+                var prepared = new RestoreProcessGuard().PreserveActiveBrowserCache(plan, pathResolver.ResolveCodexHome(manifest));
+                foreach (var warning in prepared.Warnings) progress.Report("Warning: " + warning);
+                var compared = _dryRunService.ComparePlan(prepared.Plan, progress, cancellationToken);
+                compared.Warnings.AddRange(prepared.Warnings);
+                return compared;
+            }, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!fingerprint.Equals(CreateRestoreFingerprint(), StringComparison.Ordinal))
+                throw new InvalidOperationException("Restore settings changed during the scan. Run Dry Run again.");
 
             var currentProfile = pathResolver.GetCurrentUserProfile();
             var profileNote = !string.IsNullOrWhiteSpace(manifest.SourceUserProfile)
@@ -662,15 +687,43 @@ public sealed class MainWindowViewModel : ViewModelBase
             OperationStatus = result.FilesToDelete > 0
                 ? $"Dry Run completed. Review warning: {result.FilesToDelete:N0} destination-only files will be deleted."
                 : "Dry Run completed. No destination-only files will be deleted.";
-            _lastDryRunFingerprint = CreateRestoreFingerprint();
+            progress.Report(DryRunSummary);
+            AddRestoreLog(DryRunSummary);
+            foreach (var warning in result.Warnings) AddRestoreLog($"Warning: {warning}");
+            progress.Finish(OperationStatus);
+            RestoreResult = OperationStatus;
+            RestoreResultBrush = result.FilesToDelete > 0 || result.Warnings.Count > 0 ? "#735A10" : "#166534";
+            AddRestoreLog(RestoreResult);
+            _lastDryRunFingerprint = fingerprint;
             RestoreCommand.RaiseCanExecuteChanged();
+        }
+        catch (OperationCanceledException)
+        {
+            InvalidateDryRun();
+            DryRunSummary = "Dry Run canceled. No files were copied or deleted.";
+            OperationStatus = RestoreResult = DryRunSummary;
+            RestoreResultBrush = "#735A10";
+            progress.Finish(DryRunSummary);
+            AddRestoreLog(DryRunSummary);
         }
         catch (Exception ex)
         {
             InvalidateDryRun();
             DryRunSummary = $"Dry Run failed: {ex.Message}";
             OperationStatus = DryRunSummary;
+            RestoreResult = DryRunSummary;
+            RestoreResultBrush = "#B42318";
+            progress.Finish(DryRunSummary);
+            AddRestoreLog(DryRunSummary);
             System.Windows.MessageBox.Show(DryRunSummary, "Dry Run Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            RestoreProgressStatus = RestoreResult;
+            AddRestoreLog(progress.Error is null ? $"Full log: {progress.FilePath}" : $"Log could not be saved: {progress.Error}");
+            _restoreCancellation.Dispose();
+            _restoreCancellation = null;
+            IsRestoreRunning = false;
         }
     }
 
@@ -779,9 +832,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         if (IsRestoreRunning)
         {
-            OperationStatus = "Canceling restore...";
+            OperationStatus = "Canceling current operation...";
             RestoreProgressStatus = OperationStatus;
-            AddRestoreLog("Cancel requested. Stopping active copy process...");
+            AddRestoreLog("Cancel requested. Waiting for the current operation to stop...");
             _restoreCancellation?.Cancel();
         }
 

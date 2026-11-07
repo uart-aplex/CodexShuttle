@@ -62,10 +62,11 @@ internal static class MergeDatabase
         return MergeFiles.Hash(Encoding.UTF8.GetBytes(string.Join('\n', items)));
     }
 
-    public static Dictionary<string, object?> PrepareRow(SqliteConnection target, Dictionary<string, object?> source, MergeEntry entry, SqliteTransaction? transaction = null)
+    public static Dictionary<string, object?> PrepareRow(SqliteConnection target, Dictionary<string, object?> source, MergeEntry entry, SqliteTransaction? transaction = null, bool paginated = false)
     {
         ValidateTriggers(target, transaction);
-        if (source.TryGetValue("history_mode", out var mode) && Convert.ToString(mode) is not (null or "legacy"))
+        if (source.TryGetValue("history_mode", out var mode) && Convert.ToString(mode) is not (null or "legacy")
+            && !(paginated && Convert.ToString(mode) == "paginated"))
             throw new InvalidDataException("Only self-contained legacy JSONL history is supported by this merge adapter.");
         var row = new Dictionary<string, object?>();
         using var command = Command(target, "PRAGMA table_info(threads)", transaction);
@@ -74,18 +75,19 @@ internal static class MergeDatabase
         {
             var name = reader.GetString(1);
             if (source.TryGetValue(name, out var value)) row[name] = value;
-            if (name == "rollout_path") row[name] = entry.TargetPath;
+            if (name == "rollout_path") row[name] = entry.TargetPath.EndsWith(".jsonl.zst", StringComparison.OrdinalIgnoreCase) ? entry.TargetPath[..^4] : entry.TargetPath;
             if (name == "cwd") row[name] = entry.WorkingDirectory;
             if (name == "preview" && (!row.TryGetValue(name, out var preview) || string.IsNullOrWhiteSpace(Convert.ToString(preview))))
                 row[name] = source.TryGetValue("first_user_message", out var first) && !string.IsNullOrWhiteSpace(Convert.ToString(first)) ? first : entry.Title;
             // Cross-device project/parent relations cannot be inferred from local registries.
-            if (name is "project_id" or "parent_thread_id" or "thread_section_id" or "section_position" or "section_entered_at_ms") row[name] = null;
+            if (name is "project_id" or "parent_thread_id" or "attached_thread_parent_id" or "thread_section_id" or "section_position" or "section_entered_at_ms") row[name] = null;
             if (name == "is_pinned") row[name] = 0L;
             if (reader.GetInt32(3) != 0 && reader.IsDBNull(4) && (!row.TryGetValue(name, out var required) || required is null))
                 throw new InvalidDataException($"Unsupported required threads column: {name}");
         }
         foreach (var key in new[] { "id", "rollout_path", "cwd" })
             if (!row.ContainsKey(key)) throw new InvalidDataException($"Unsupported threads schema: missing {key}");
+        if (paginated && !row.ContainsKey("history_mode")) throw new InvalidDataException("Destination does not support paginated thread metadata.");
         if (Convert.ToString(row["id"]) != entry.Id) throw new InvalidDataException("Session and SQLite thread IDs disagree.");
         reader.Close();
         using var foreignKeys = Command(target, "PRAGMA foreign_key_list(threads)", transaction);
@@ -130,6 +132,29 @@ internal static class MergeDatabase
             command.Parameters.AddWithValue("$id", id);
             command.ExecuteNonQuery();
         }
+    }
+
+    internal static Dictionary<string, object?> PrepareUpdate(Dictionary<string, object?> local, Dictionary<string, object?> source, MergeEntry entry)
+    {
+        if (Convert.ToString(local.GetValueOrDefault("history_mode")) != "paginated")
+            throw new InvalidDataException("Incremental updates require a paginated local conversation.");
+        // Local title, project, pinning, archive state, provider and parent relations stay intact.
+        var row = new Dictionary<string, object?>(local);
+        row["rollout_path"] = entry.TargetPath.EndsWith(".zst", StringComparison.OrdinalIgnoreCase) ? entry.TargetPath[..^4] : entry.TargetPath;
+        row["cwd"] = entry.WorkingDirectory;
+        foreach (var name in new[] { "updated_at", "updated_at_ms", "recency_at", "recency_at_ms", "tokens_used" })
+            if (local.ContainsKey(name) && source.TryGetValue(name, out var value)) row[name] = value;
+        return row;
+    }
+
+    internal static void Update(SqliteConnection connection, SqliteTransaction transaction, Dictionary<string, object?> row)
+    {
+        ValidateTriggers(connection, transaction);
+        var values = row.Where(p => p.Key != "id").ToArray();
+        using var command = Command(connection, $"UPDATE threads SET {string.Join(',', values.Select((p, i) => Quote(p.Key) + "=$p" + i))} WHERE id=$id", transaction);
+        command.Parameters.AddWithValue("$id", row["id"]!);
+        for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue("$p" + i, values[i].Value ?? DBNull.Value);
+        if (command.ExecuteNonQuery() != 1) throw new InvalidDataException("The conversation to update is missing.");
     }
 
     public static void Snapshot(SqliteConnection source, string destination)
